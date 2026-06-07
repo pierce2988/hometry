@@ -1,0 +1,2427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>H°METRY</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@700;800&display=swap" rel="stylesheet">
+<!-- Firebase SDKs -->
+<script>
+(function waitForFirebase() {
+  if (typeof firebase === 'undefined') {
+    setTimeout(waitForFirebase, 50);
+    return;
+  }
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBxU-BavULEvto9otWMtQDqWbhoAEzOvD4",
+    authDomain: "mortgage-match-228bb.firebaseapp.com",
+    projectId: "mortgage-match-228bb",
+    storageBucket: "mortgage-match-228bb.firebasestorage.app",
+    messagingSenderId: "1015608872993",
+    appId: "1:1015608872993:web:e91624cd770cf499af1360"
+  };
+  firebase.initializeApp(firebaseConfig);
+  window.fbAuth = firebase.auth();
+  window.fbDb = firebase.firestore();
+  var auth = window.fbAuth;
+  var db = window.fbDb;
+
+  // ── Save profile to Firestore ──
+  function saveProfile(uid) {
+    return db.collection("users").doc(uid).set({
+      name: window.S.name || "",
+      creditScore: window.S.creditScore || 0,
+      creditRange: window.S.creditRange || "",
+      empType: window.S.empType || "",
+      income: window.S.income || 0,
+      debts: window.S.debts || 0,
+      homePrice: window.S.homePrice || 0,
+      rate: window.S.rate || 0,
+      assets: window.S.assets || 0,
+      down: window.S.down || 0,
+      isVA: window.S.isVA || false,
+      score: window.S.score || 0,
+      dti: window.S.dti || 0,
+      frontEnd: window.S.frontEnd || 0,
+      housingPmt: window.S.housingPmt || 0,
+      savedAt: new Date().toISOString()
+    }, { merge: true })
+    .then(function(){ console.log("Profile saved"); })
+    .catch(function(e){ console.error("Save error:", e); });
+  }
+
+  // ── Load profile from Firestore ──
+  function loadProfile(uid) {
+    return db.collection("users").doc(uid).get().then(function(snap) {
+      if (snap.exists) {
+        var d = snap.data();
+        Object.assign(window.S, d);
+        return true;
+      }
+      return false;
+    }).catch(function(){ return false; });
+  }
+
+  // ── Auth state listener ──
+  auth.onAuthStateChanged(function(user) {
+    if (user) {
+      window.currentUser = user;
+      updateAuthUI(user);
+      loadProfile(user.uid).then(function(loaded) {
+        if (loaded && window.S && window.S.score > 0) {
+          window.toDash();
+          showToast("Welcome back, " + (window.S.name || user.displayName || "there") + "!");
+        }
+      });
+    } else {
+      window.currentUser = null;
+      updateAuthUI(null);
+    }
+  });
+
+  function updateAuthUI(user) {
+    var loggedIn = !!user;
+    document.querySelectorAll(".auth-signedin").forEach(function(el){ el.style.display = loggedIn ? "flex" : "none"; });
+    document.querySelectorAll(".auth-signedout").forEach(function(el){ el.style.display = loggedIn ? "none" : "flex"; });
+    var nameEl = document.getElementById("auth-user-name");
+    if (nameEl && user) nameEl.textContent = user.displayName || user.email || "Your Account";
+    var soBtn = document.getElementById("btn-signout");
+    if (soBtn) soBtn.style.display = loggedIn ? "flex" : "none";
+  }
+
+  // ── Google Sign In (redirect mode — works on all browsers/devices) ──
+  window.signInGoogle = function() {
+    showAuthLoading(true);
+    var provider = new firebase.auth.GoogleAuthProvider();
+    // Use redirect instead of popup — avoids popup blockers
+    auth.signInWithRedirect(provider).catch(function(e) {
+      showAuthLoading(false);
+      showToast("Sign-in failed: " + e.message, true);
+    });
+  };
+
+  // Handle the redirect result when page loads back
+  auth.getRedirectResult().then(function(result) {
+    if (result && result.user) {
+      if (!window.S.name && result.user.displayName)
+        window.S.name = result.user.displayName.split(" ")[0];
+      saveProfile(result.user.uid).then(function() {
+        showToast("Signed in with Google!");
+      });
+    }
+  }).catch(function(e) {
+    if (e.code !== 'auth/no-auth-event')
+      showToast("Sign-in error: " + e.message, true);
+  });
+
+  // ── Email Sign Up ──
+  window.signUpEmail = function() {
+    var name  = document.getElementById("auth-name") ? document.getElementById("auth-name").value.trim() : "";
+    var email = document.getElementById("auth-email") ? document.getElementById("auth-email").value.trim() : "";
+    var pass  = document.getElementById("auth-pass") ? document.getElementById("auth-pass").value : "";
+    if (!email) { showToast("Please enter your email address", true); return; }
+    if (!pass || pass.length < 6) { showToast("Password must be at least 6 characters", true); return; }
+    showAuthLoading(true);
+    auth.createUserWithEmailAndPassword(email, pass)
+      .then(function(result) {
+        if (name) window.S.name = name;
+        return result.user.updateProfile({ displayName: name }).then(function(){
+          return saveProfile(result.user.uid);
+        });
+      })
+      .then(function() {
+        closeSaveModal();
+        showToast("Account created! Welcome" + (name ? ", " + name : "") + "!");
+        showAuthLoading(false);
+      })
+      .catch(function(e) {
+        showAuthLoading(false);
+        if (e.code === "auth/email-already-in-use")
+          showToast("That email is already registered. Try signing in.", true);
+        else if (e.code === "auth/invalid-email")
+          showToast("Please enter a valid email address.", true);
+        else
+          showToast(e.message, true);
+      });
+  };
+
+  // ── Email Sign In ──
+  window.signInEmail = function() {
+    var email = document.getElementById("signin-email") ? document.getElementById("signin-email").value.trim() : "";
+    var pass  = document.getElementById("signin-pass") ? document.getElementById("signin-pass").value : "";
+    if (!email || !pass) { showToast("Please enter your email and password", true); return; }
+    showAuthLoading(true);
+    auth.signInWithEmailAndPassword(email, pass)
+      .then(function() {
+        closeSignInModal();
+        showToast("Signed in successfully!");
+        showAuthLoading(false);
+      })
+      .catch(function(e) {
+        showAuthLoading(false);
+        if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password" || e.code === "auth/user-not-found")
+          showToast("Incorrect email or password.", true);
+        else
+          showToast(e.message, true);
+      });
+  };
+
+  // ── Sign Out ──
+  window.doSignOut = function() {
+    auth.signOut().then(function() {
+      showToast("Signed out successfully");
+      window.go("p0");
+    });
+  };
+
+  // ── Save after score ──
+  window.saveAfterScore = function() {
+    if (window.currentUser) {
+      saveProfile(window.currentUser.uid).then(function(){
+        showToast("Score saved to your account!");
+      });
+    }
+  };
+
+  function showAuthLoading(show) {
+    document.querySelectorAll(".auth-loading").forEach(function(el){
+      el.style.display = show ? "block" : "none";
+    });
+    document.querySelectorAll(".auth-submit-btn").forEach(function(el){
+      el.disabled = show;
+    });
+  }
+
+// ── DEDICATED SIGN UP / SIGN IN FLOWS ──
+function goToSignUp(backScreen) {
+  var el = document.getElementById('p-signup');
+  if (el) el.setAttribute('data-back', backScreen || 'p-res');
+  // Show correct section based on auth state
+  var alreadyIn = document.getElementById('already-signedin');
+  var formWrap = document.getElementById('signup-form-wrap');
+  if (window.currentUser) {
+    if (alreadyIn) alreadyIn.style.display = 'block';
+    if (formWrap) formWrap.style.display = 'none';
+  } else {
+    if (alreadyIn) alreadyIn.style.display = 'none';
+    if (formWrap) formWrap.style.display = 'block';
+  }
+  go('p-signup');
+}
+
+function doSignUp() {
+  var nameVal  = (document.getElementById('su-name') || {value:''}).value.trim();
+  var emailVal = (document.getElementById('su-email') || {value:''}).value.trim();
+  var passVal  = (document.getElementById('su-pass') || {value:''}).value;
+  var errEl    = document.getElementById('su-error');
+  var btn      = document.getElementById('su-btn');
+
+  // Validation
+  if (!emailVal) { showErr(errEl, 'Please enter your email address.'); return; }
+  if (!passVal || passVal.length < 6) { showErr(errEl, 'Password must be at least 6 characters.'); return; }
+
+  // Get auth instance
+  var authInst = window.fbAuth || (typeof firebase !== 'undefined' ? firebase.auth() : null);
+  if (!authInst) { showErr(errEl, 'App not ready. Please refresh and try again.'); return; }
+
+  if (btn) { btn.textContent = 'Creating account…'; btn.disabled = true; }
+  if (errEl) errEl.style.display = 'none';
+
+  authInst.createUserWithEmailAndPassword(emailVal, passVal)
+    .then(function(cred) {
+      window.currentUser = cred.user;
+      if (nameVal) {
+        window.S.name = nameVal;
+        cred.user.updateProfile({displayName: nameVal}).catch(function(){});
+      }
+      var dbInst = window.fbDb || (typeof firebase !== 'undefined' ? firebase.firestore() : null);
+      if (!dbInst) return Promise.resolve();
+      return dbInst.collection('users').doc(cred.user.uid).set({
+        name: nameVal || window.S.name || '',
+        creditScore: window.S.creditScore || 0,
+        creditRange: window.S.creditRange || '',
+        income: window.S.income || 0,
+        debts: window.S.debts || 0,
+        homePrice: window.S.homePrice || 0,
+        rate: window.S.rate || 0,
+        assets: window.S.assets || 0,
+        down: window.S.down || 0,
+        isVA: window.S.isVA || false,
+        score: window.S.score || 0,
+        dti: window.S.dti || 0,
+        savedAt: new Date().toISOString()
+      }, {merge: true});
+    })
+    .then(function() {
+      if (btn) { btn.textContent = 'Create Free Account →'; btn.disabled = false; }
+      showToast('Account created! Welcome' + (window.S.name ? ', ' + window.S.name : '') + '!');
+      go('p-res');
+      setTimeout(drawGauge, 400);
+    })
+    .catch(function(e) {
+      if (btn) { btn.textContent = 'Create Free Account →'; btn.disabled = false; }
+      var msg = e.code === 'auth/email-already-in-use'
+              ? 'That email already has an account. Tap Sign In instead.'
+              : e.code === 'auth/invalid-email' ? 'Please enter a valid email address.'
+              : e.code === 'auth/weak-password' ? 'Password must be at least 6 characters.'
+              : (e.message || 'Something went wrong. Please try again.');
+      showErr(errEl, msg);
+    });
+}
+
+function doSignIn() {
+  var emailVal = (document.getElementById('si-email') || {value:''}).value.trim();
+  var passVal  = (document.getElementById('si-pass') || {value:''}).value;
+  var errEl    = document.getElementById('si-error');
+  var btn      = document.getElementById('si-btn');
+
+  if (!emailVal || !passVal) { showErr(errEl, 'Please enter your email and password.'); return; }
+
+  var authInst = window.fbAuth || (typeof firebase !== 'undefined' ? firebase.auth() : null);
+  if (!authInst) { showErr(errEl, 'App not ready. Please refresh and try again.'); return; }
+
+  if (btn) { btn.textContent = 'Signing in…'; btn.disabled = true; }
+  if (errEl) errEl.style.display = 'none';
+
+  authInst.signInWithEmailAndPassword(emailVal, passVal)
+    .then(function(cred) {
+      window.currentUser = cred.user;
+      var dbInst = window.fbDb || (typeof firebase !== 'undefined' ? firebase.firestore() : null);
+      if (!dbInst) return Promise.resolve(null);
+      return dbInst.collection('users').doc(cred.user.uid).get();
+    })
+    .then(function(doc) {
+      if (btn) { btn.textContent = 'Sign In →'; btn.disabled = false; }
+      if (doc && doc.exists) {
+        var d = doc.data();
+        Object.keys(d).forEach(function(k) { if (d[k] !== undefined) window.S[k] = d[k]; });
+        if (window.S.score > 0) calcScore();
+      }
+      showToast('Welcome back' + (window.S.name ? ', ' + window.S.name : '') + '!');
+      go(window.S.score > 0 ? 'p-res' : 'p-q1');
+      if (window.S.score > 0) setTimeout(drawGauge, 400);
+    })
+    .catch(function(e) {
+      if (btn) { btn.textContent = 'Sign In →'; btn.disabled = false; }
+      var msg = (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found')
+              ? 'Incorrect email or password. Please try again.'
+              : (e.message || 'Sign in failed. Please try again.');
+      showErr(errEl, msg);
+    });
+}
+
+function showErr(el, msg) {
+  if (el) { el.textContent = msg; el.style.display = 'block'; }
+  else showToast(msg, true);
+}
+
+
+// ── MANUAL PRICE OVERRIDE ──
+function applyManualPrice(val){
+  var price=parseFloat(val)||0;
+  if(price<10000) return;
+  var addr=document.getElementById('addrIn').value;
+  document.getElementById('p-val').textContent=fmt(price);
+  calcPropertyScore(price,addr);
+  buildMatches(price,'default');
+}
+
+
+})();
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:Barlow,sans-serif;background:#f5f5f7;color:#111;min-height:100vh}
+.pg{display:none;min-height:100vh;flex-direction:column}
+.pg.on{display:flex}
+@keyframes up{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── COLORS ──
+   Primary text:   #111111
+   Secondary text: #555555
+   Hint text:      #999999
+   Brand red:      #ed2427
+   Red dark:       #c41f22
+   Background:     #f5f5f7
+   Card:           #ffffff
+   Border:         #e8e8e8
+   Header bg:      #ffffff
+   Header accent:  3px solid #ed2427
+*/
+
+/* ── LANDING ── */
+#p0{background:#fff;flex-direction:column;min-height:100vh}
+.land-hero{
+  background:#fff;
+  padding:40px 24px 32px;
+  text-align:center;
+  border-bottom:3px solid #ed2427;
+  position:relative;
+}
+.land-hero::before{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:60px;
+  background:linear-gradient(to bottom,rgba(237,36,39,.03),transparent);
+  pointer-events:none;
+}
+.land-tagline{font-family:"Barlow Condensed",sans-serif;font-size:2.4rem;font-weight:800;color:#111;line-height:1.1;margin-bottom:8px}
+.land-tagline em{color:#ed2427;font-style:normal}
+.land-sub{font-size:.9rem;color:#777;line-height:1.6}
+.land-body{padding:24px 20px 40px;flex:1;background:#f5f5f7}
+.land-section-title{font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#bbb;margin-bottom:12px}
+.land-cards{display:flex;flex-direction:column;gap:12px;margin-bottom:28px}
+.land-btn{
+  background:#fff;border:2px solid #e8e8e8;border-radius:16px;
+  padding:18px 20px;display:flex;align-items:center;gap:16px;cursor:pointer;
+  width:100%;font-family:Barlow,sans-serif;color:#111;text-align:left;
+  transition:all .2s;box-shadow:0 2px 10px rgba(0,0,0,.05);
+}
+.land-btn:hover{border-color:#ed2427;box-shadow:0 4px 18px rgba(237,36,39,.12);transform:translateY(-1px)}
+.land-btn.primary{background:linear-gradient(135deg,#ed2427,#c41f22);border-color:transparent;color:#fff;box-shadow:0 6px 20px rgba(237,36,39,.28)}
+.land-btn.primary:hover{box-shadow:0 8px 28px rgba(237,36,39,.38);transform:translateY(-2px)}
+.land-btn.primary h3,.land-btn.primary p{color:#fff}
+.land-btn.primary p{opacity:.8}
+.lbico{width:48px;height:48px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0}
+.land-btn.primary .lbico{background:rgba(255,255,255,.2)}
+.land-btn:not(.primary) .lbico{background:#fff5f5}
+.land-btn h3{font-size:.95rem;font-weight:700;margin-bottom:2px}
+.land-btn p{font-size:.74rem;color:#888;line-height:1.4}
+.land-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.lstat{background:#fff;border-radius:14px;padding:14px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.04);border:1.5px solid #f0f0f0}
+.lstat-num{font-family:"Barlow Condensed",sans-serif;font-size:1.6rem;font-weight:800;color:#ed2427;line-height:1;margin-bottom:3px}
+.lstat-lbl{font-size:.68rem;color:#aaa;line-height:1.3}
+
+/* ── UNIVERSAL HEADER ── */
+.fhdr{padding:16px 20px 0;display:flex;align-items:center;gap:12px;background:#fff;border-bottom:3px solid #ed2427;flex-shrink:0;padding-bottom:16px}
+.bk{width:38px;height:38px;border-radius:11px;background:#fff5f5;border:1.5px solid rgba(237,36,39,.2);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+    font-size:1.1rem;color:#ed2427;font-family:Barlow,sans-serif;flex-shrink:0;transition:.15s}
+.bk:hover{background:rgba(237,36,39,.1)}
+.pbar{flex:1;height:5px;background:#f0f0f0;border-radius:3px;overflow:hidden}
+.pfill{height:100%;background:linear-gradient(90deg,#ed2427,#ff5f61);border-radius:3px;transition:width .4s}
+.plbl{font-size:.68rem;color:#bbb;white-space:nowrap;font-weight:600}
+
+/* ── FLOW BODY ── */
+.fbody{flex:1;padding:24px 20px 28px;display:flex;flex-direction:column;overflow-y:auto;background:#f5f5f7}
+.eye{font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#ed2427;margin-bottom:8px}
+.qh{font-family:"Barlow Condensed",sans-serif;font-size:2rem;font-weight:800;color:#111;line-height:1.1;margin-bottom:7px}
+.qs{font-size:.83rem;color:#888;margin-bottom:20px;line-height:1.55}
+
+/* ── INPUTS ── */
+.fl{font-size:.71rem;font-weight:700;color:#666;letter-spacing:.04em;text-transform:uppercase;margin-bottom:7px}
+.iw{position:relative;margin-bottom:14px}
+.ipx{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#ed2427;font-weight:700;pointer-events:none;z-index:2;font-size:1rem}
+.isx{position:absolute;right:14px;top:50%;transform:translateY(-50%);color:#ed2427;font-weight:700;pointer-events:none;z-index:2;font-size:1rem}
+input[type=number],input[type=text]{
+  width:100%;background:#fff;border:2px solid #e8e8e8;border-radius:12px;
+  padding:13px 15px;color:#111;font-family:Barlow,sans-serif;font-size:.97rem;font-weight:500;
+  outline:none;transition:border-color .2s,box-shadow .2s;-moz-appearance:textfield;
+  box-shadow:0 1px 4px rgba(0,0,0,.04);
+}
+input::-webkit-inner-spin-button{-webkit-appearance:none}
+input:focus{border-color:#ed2427;box-shadow:0 0 0 3px rgba(237,36,39,.1)}
+input::placeholder{color:#ccc}
+.px{padding-left:36px!important}
+.sx{padding-right:36px!important}
+
+/* ── DOWN PAYMENT PRESETS ── */
+.dp-presets{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.dp-preset{background:#fff;border:2px solid #e8e8e8;border-radius:12px;padding:10px 6px;cursor:pointer;text-align:center;font-family:Barlow,sans-serif;color:#111;transition:.18s;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.dp-preset:hover{border-color:rgba(237,36,39,.4)}
+.dp-preset.sel{border-color:#ed2427;background:rgba(237,36,39,.06)}
+.dp-pct{font-size:.88rem;font-weight:800;color:#ed2427;display:block}
+.dp-amt{font-size:.65rem;color:#aaa;display:block;margin-top:2px}
+.dp-custom{display:none}.dp-custom.on{display:block;animation:up .25s ease}
+
+/* ── OPTIONS ── */
+.og{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.og.one{grid-template-columns:1fr}
+.oc{background:#fff;border:2px solid #e8e8e8;border-radius:13px;padding:14px;cursor:pointer;text-align:center;font-family:Barlow,sans-serif;color:#111;transition:.18s;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.oc:hover{border-color:rgba(237,36,39,.4);background:rgba(237,36,39,.02)}
+.oc.sel{border-color:#ed2427;background:rgba(237,36,39,.06)}
+.oi{font-size:1.6rem;margin-bottom:7px}
+.ol{font-size:.85rem;font-weight:700}
+.os{font-size:.7rem;color:#aaa;margin-top:3px}
+
+/* ── CREDIT TOGGLE ── */
+.ctog{display:flex;gap:10px;margin-bottom:16px;background:#fff;border-radius:13px;padding:5px;border:2px solid #e8e8e8}
+.ctbtn{flex:1;padding:10px;border-radius:9px;border:none;background:transparent;color:#888;font-family:Barlow,sans-serif;font-size:.82rem;font-weight:600;cursor:pointer;transition:.2s}
+.ctbtn.sel{background:#ed2427;color:#fff;box-shadow:0 2px 8px rgba(237,36,39,.3)}
+.csec{display:none}.csec.on{display:block;animation:up .3s ease}
+.flbl{text-align:center;font-size:.85rem;font-weight:700;margin-top:-6px;margin-bottom:12px}
+
+/* ── SE BOX ── */
+.sebox{display:none;background:#fff;border:2px solid rgba(237,36,39,.15);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 2px 8px rgba(237,36,39,.06)}
+.sebox.on{display:block;animation:up .3s ease}
+.sebox h4{font-size:.83rem;font-weight:700;color:#ed2427;margin-bottom:8px}
+.sebox .nt{font-size:.71rem;color:#999;margin-bottom:12px;line-height:1.5}
+.trow{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.ttag{background:#ed2427;color:#fff;font-size:.6rem;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0}
+.trow input{flex:1;padding:9px 12px!important;font-size:.86rem;box-shadow:none}
+.seres{display:none;margin-top:8px;padding:11px;background:rgba(237,36,39,.06);border-radius:9px;font-size:.82rem;color:#111;font-weight:600;border:1.5px solid rgba(237,36,39,.15)}
+.seres.on{display:block}
+
+/* ── CTA ── */
+.cta{width:100%;padding:15px;background:linear-gradient(135deg,#ed2427,#c41f22);color:#fff;border:none;border-radius:13px;font-family:Barlow,sans-serif;font-size:.97rem;font-weight:700;cursor:pointer;box-shadow:0 5px 18px rgba(237,36,39,.28);margin-top:auto;transition:.2s}
+.cta:hover{transform:translateY(-1px);box-shadow:0 7px 24px rgba(237,36,39,.35)}
+.cta:active{transform:translateY(0)}
+.cta:disabled{background:#e0e0e0;box-shadow:none;cursor:not-allowed;transform:none;color:#aaa}
+
+/* ── RESULTS SCREEN ── */
+#p-res{background:#f5f5f7;flex-direction:column;overflow-y:auto}
+.res-hdr{background:#fff;padding:28px 20px 24px;flex-shrink:0;border-bottom:3px solid #ed2427}
+.rg{font-size:.78rem;color:#aaa;margin-bottom:2px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.rh{font-family:"Barlow Condensed",sans-serif;font-size:1.3rem;font-weight:800;color:#111;margin-bottom:20px}
+
+/* ── GAUGE ── */
+.gw{display:flex;flex-direction:column;align-items:center;width:100%}
+.gauge-container{position:relative;width:100%;max-width:300px;margin:0 auto}
+.gsv{overflow:visible;width:100%}
+.g-bg{fill:none;stroke:rgba(0,0,0,.06);stroke-width:22;stroke-linecap:round}
+.g-glow{fill:none;stroke-width:30;stroke-linecap:round;opacity:.12;transition:stroke-dashoffset 1.4s cubic-bezier(.4,0,.2,1)}
+.g-arc{fill:none;stroke-width:22;stroke-linecap:round;transition:stroke-dashoffset 1.4s cubic-bezier(.4,0,.2,1)}
+.g-num{font-family:"Barlow Condensed",sans-serif;font-size:86px;font-weight:800;fill:#111;text-anchor:middle;letter-spacing:-2px}
+.g-sublabel{font-family:Barlow,sans-serif;font-size:11px;font-weight:600;fill:#aaa;text-anchor:middle;letter-spacing:.1em;text-transform:uppercase}
+.g-tier{font-family:"Barlow Condensed",sans-serif;font-size:18px;font-weight:800;fill:#111;text-anchor:middle;letter-spacing:.06em;text-transform:uppercase}
+.g-endlbl{font-family:Barlow,sans-serif;font-size:11px;font-weight:600;fill:#bbb}
+
+/* ── BREAKDOWN BARS ── */
+.bkdn{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}
+.bb{background:#fff;border-radius:11px;padding:12px;border:1.5px solid #f0f0f0;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.bbl{font-size:.62rem;color:#999;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.bbt{height:5px;background:#f0f0f0;border-radius:3px;overflow:hidden;margin-bottom:5px}
+.bbf{height:100%;border-radius:3px;transition:width 1.2s ease}
+.bbv{font-size:.9rem;font-weight:700;color:#111}
+
+/* ── RESULTS BODY ── */
+.res-body{padding:18px;flex:1}
+.score-summary{background:#fff;border-radius:16px;padding:18px;margin-bottom:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);border:1.5px solid #f0f0f0}
+.score-summary h3{font-size:.68rem;color:#bbb;text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px;font-weight:700}
+.score-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.scd{background:#f8f8f8;border-radius:10px;padding:11px;border:1.5px solid #f0f0f0}
+.scd-l{font-size:.62rem;color:#aaa;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.scd-v{font-size:1rem;font-weight:700;color:#111}
+.abtns{display:flex;flex-direction:column;gap:8px;margin-bottom:8px}
+.abtn{width:100%;padding:13px;border-radius:12px;border:2px solid #e8e8e8;background:#fff;color:#111;font-family:Barlow,sans-serif;font-size:.87rem;font-weight:600;cursor:pointer;transition:.2s;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.abtn:hover{border-color:#ed2427;background:rgba(237,36,39,.04)}
+.skip{background:none;border:none;color:#bbb;font-size:.79rem;cursor:pointer;font-family:Barlow,sans-serif;padding:5px;width:100%;text-align:center}
+
+/* DTI ALERT */
+.dtia{background:#fff5f5;border:2px solid rgba(237,36,39,.25);border-radius:16px;padding:16px;margin-bottom:12px;display:none;box-shadow:0 3px 12px rgba(237,36,39,.08)}
+.dtia.on{display:block;animation:up .4s ease}
+.dtia-eye{font-size:.67rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#ed2427;margin-bottom:5px}
+.dtia-h{font-family:"Barlow Condensed",sans-serif;font-size:1.3rem;font-weight:800;color:#111;margin-bottom:4px}
+.dtia-s{font-size:.78rem;color:#777;line-height:1.5;margin-bottom:12px}
+.dtia-btn{background:linear-gradient(135deg,#ed2427,#c41f22);color:#fff;border:none;border-radius:10px;padding:12px;font-family:Barlow,sans-serif;font-size:.85rem;font-weight:700;cursor:pointer;width:100%;box-shadow:0 4px 14px rgba(237,36,39,.25)}
+
+/* SIMULATOR */
+.simw{background:#1a1a2e;border-radius:16px;padding:18px;margin-bottom:12px;display:none}
+.simw.on{display:block;animation:up .4s ease}
+.sim-top{display:flex;justify-content:space-between;background:rgba(255,255,255,.06);border-radius:10px;padding:13px 15px;margin-bottom:16px}
+.sst .sl{font-size:.61rem;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
+.sst .sv{font-family:"Barlow Condensed",sans-serif;font-size:1.5rem;font-weight:800}
+.sv-bad{color:#f87171}
+.debt-entry{background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.12);border-radius:12px;padding:13px;position:relative;margin-bottom:9px}
+.debt-entry input{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.15);color:#fff;box-shadow:none}
+.debt-entry input::placeholder{color:rgba(255,255,255,.25)}
+.debt-entry input:focus{border-color:#ed2427}
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.dgrid .iw{margin-bottom:0}
+.dfl{font-size:.62rem;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
+.rmv{position:absolute;top:10px;right:10px;background:none;border:none;color:rgba(255,255,255,.3);font-size:.9rem;cursor:pointer;padding:2px 6px;border-radius:5px}
+.rmv:hover{color:#f87171}
+.add-btn{width:100%;padding:12px;border-radius:11px;border:2px dashed rgba(255,255,255,.15);background:transparent;color:rgba(255,255,255,.45);font-family:Barlow,sans-serif;font-size:.83rem;font-weight:600;cursor:pointer;margin-bottom:14px}
+.add-btn:hover{border-color:rgba(237,36,39,.5);color:rgba(255,255,255,.7)}
+.sim-res{display:none}.sim-res.on{display:block;animation:up .3s ease}
+.pi{display:flex;align-items:center;gap:11px;border-radius:11px;padding:12px 13px;border:1.5px solid;margin-bottom:8px}
+.pi-y{background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.3)}
+.pi-n{background:rgba(107,114,128,.06);border-color:rgba(107,114,128,.2);opacity:.6}
+.pin{width:27px;height:27px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.73rem;font-weight:800;flex-shrink:0}
+.pin-y{background:#16a34a;color:#fff}.pin-n{background:#555;color:#888}
+.pib{flex:1}
+.pin2{font-size:.87rem;font-weight:700;color:#fff;margin-bottom:1px}
+.pid{font-size:.71rem;color:rgba(255,255,255,.45)}
+.pitag{font-size:.67rem;font-weight:700;padding:3px 9px;border-radius:100px;white-space:nowrap}
+.pty{background:rgba(74,222,128,.15);color:#4ade80}
+.ptn{background:rgba(107,114,128,.12);color:#999}
+.dti-boxes{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:14px 0 11px}
+.dtib{border-radius:11px;padding:13px}
+.dtib-o{background:rgba(255,255,255,.07)}
+.dtib-n{background:rgba(74,222,128,.1);border:1.5px solid rgba(74,222,128,.3)}
+.dtibl{font-size:.61rem;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.dtibv{font-family:"Barlow Condensed",sans-serif;font-size:1.8rem;font-weight:800}
+.simmsg{font-size:.79rem;color:rgba(255,255,255,.55);line-height:1.6;padding:12px;background:rgba(255,255,255,.05);border-radius:9px}
+
+/* DASHBOARD */
+#p-dash{background:#f5f5f7;flex-direction:column}
+.dhdr{background:#fff;padding:28px 20px 24px;border-bottom:3px solid #ed2427;position:relative}
+.dg{font-size:.78rem;color:#aaa;margin-bottom:3px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.dn{font-family:"Barlow Condensed",sans-serif;font-size:1.6rem;font-weight:800;color:#111;margin-bottom:20px}
+.mgw{display:flex;align-items:center;gap:16px}
+.mgs{font-family:"Barlow Condensed",sans-serif;font-size:3rem;font-weight:800;line-height:1;color:#111}
+.mgt{font-size:.82rem;font-weight:600;margin-top:3px;color:#777}
+.dbody{padding:0 20px 34px;flex:1;overflow-y:auto}
+.acds{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0}
+.acd{background:#fff;border:2px solid #e8e8e8;border-radius:16px;padding:18px 14px;cursor:pointer;text-align:center;font-family:Barlow,sans-serif;color:#111;transition:.2s;box-shadow:0 2px 8px rgba(0,0,0,.05)}
+.acd:hover{border-color:#ed2427;transform:translateY(-2px);box-shadow:0 6px 18px rgba(237,36,39,.1)}
+.acd.p{border-color:rgba(237,36,39,.3);background:linear-gradient(135deg,#fff5f5,#fff)}
+.ai{font-size:1.85rem;margin-bottom:8px}
+.at{font-size:.83rem;font-weight:700;margin-bottom:2px;color:#111}
+.as{font-size:.69rem;color:#aaa;line-height:1.4}
+.stl{font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#bbb;margin-bottom:11px}
+.tips{display:flex;flex-direction:column;gap:10px}
+.tip{background:#fff;border:1.5px solid #f0f0f0;border-radius:14px;padding:16px;display:flex;gap:13px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.tpi{font-size:1.3rem;flex-shrink:0;margin-top:1px}
+.tpt{font-size:.85rem;font-weight:700;margin-bottom:2px;color:#111}
+.tps{font-size:.74rem;color:#888;line-height:1.5}
+
+/* MATCH */
+#p-match{background:#f5f5f7;flex-direction:column}
+.mbody{padding:0 20px 34px;flex:1;overflow-y:auto}
+.aw{position:relative;margin-bottom:17px}
+.aico{position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:1rem;pointer-events:none;z-index:2}
+#addrIn{padding-left:38px!important}
+.add{position:absolute;top:calc(100% + 3px);left:0;right:0;background:#fff;border:2px solid #e8e8e8;border-radius:12px;overflow:hidden;z-index:100;display:none;box-shadow:0 10px 28px rgba(0,0,0,.1)}
+.add.on{display:block}
+.si{padding:12px 15px;font-size:.85rem;cursor:pointer;border-bottom:1px solid #f4f4f4;transition:.15s;color:#111}
+.si:last-child{border-bottom:none}
+.si:hover{background:#fff5f5}
+.sm{font-weight:600}.ss{font-size:.72rem;color:#aaa;margin-top:1px}
+.pcard{background:#fff;border:2px solid #e8e8e8;border-radius:16px;padding:18px;margin-bottom:16px;display:none;box-shadow:0 3px 12px rgba(0,0,0,.06)}
+.pcard.on{display:block;animation:up .3s ease}
+.pa{font-size:.78rem;color:#aaa;margin-bottom:3px}
+.pv{font-family:"Barlow Condensed",sans-serif;font-size:2rem;font-weight:800;color:#111}
+.pn{font-size:.68rem;color:#ccc;margin-top:3px}
+.lcards{display:none;flex-direction:column;gap:12px}
+.lcards.on{display:flex}
+.lcard2{border-radius:16px;border:2px solid;background:#fff;box-shadow:0 3px 12px rgba(0,0,0,.06);overflow:hidden;transition:box-shadow .2s}
+.lcard2:hover{box-shadow:0 6px 20px rgba(0,0,0,.1)}
+.ly{border-color:rgba(22,163,74,.3)}.lm{border-color:rgba(217,119,6,.3)}.ln{border-color:#e8e8e8;opacity:.6}
+.lcard-header{padding:18px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;user-select:none}
+.lcard-header-left{flex:1}
+.lt2{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.lna{font-size:.95rem;font-weight:700;color:#111}
+.mb{font-size:.65rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:4px 10px;border-radius:100px}
+.mby{background:rgba(22,163,74,.1);color:#16a34a}.mbm{background:rgba(217,119,6,.1);color:#d97706}.mbn{background:rgba(107,114,128,.1);color:#6b7280}
+.lpy{font-family:"Barlow Condensed",sans-serif;font-size:2rem;font-weight:800;color:#111;line-height:1}
+.lps{font-size:.7rem;color:#aaa;margin-top:2px}
+.lcard-expand-icon{font-size:1.2rem;color:#ddd;transition:transform .3s;flex-shrink:0}
+.lcard2.expanded .lcard-expand-icon{transform:rotate(180deg)}
+.lcard-body{display:none;padding:0 18px 18px;border-top:2px solid #f4f4f4}
+.lcard2.expanded .lcard-body{display:block;animation:up .25s ease}
+.ldets{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+.ldet{background:#f8f8f8;border-radius:10px;padding:10px 12px;border:1.5px solid #f0f0f0}
+.ldl{font-size:.62rem;color:#bbb;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.ldv{font-size:.88rem;font-weight:700;color:#111}
+.lcard-cta{margin-top:14px;width:100%;padding:13px;background:linear-gradient(135deg,#ed2427,#c41f22);color:#fff;border:none;border-radius:11px;font-family:Barlow,sans-serif;font-size:.87rem;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(237,36,39,.25)}
+.no-match-msg{font-size:.79rem;color:#bbb;margin-top:4px;padding:4px 0}
+.impr{background:#fff;border:2px solid rgba(237,36,39,.2);border-radius:14px;padding:16px;margin-top:14px;display:none;box-shadow:0 2px 8px rgba(237,36,39,.06)}
+.impr.on{display:block}
+.impr-t{font-size:.83rem;font-weight:700;color:#ed2427;margin-bottom:9px}
+.impr-i{font-size:.77rem;color:#555;margin-bottom:6px;padding-left:13px;position:relative;line-height:1.4}
+.impr-i::before{content:"→";position:absolute;left:0;color:#ed2427}
+
+/* LO CARD */
+.locard{background:#1a1a2e;border-radius:16px;padding:20px;margin-top:14px;display:none}
+.locard.on{display:block;animation:up .4s ease}
+.lo-eye{font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#ed2427;margin-bottom:7px}
+.lo-h{font-family:"Barlow Condensed",sans-serif;font-size:1.6rem;font-weight:800;color:#fff;margin-bottom:4px}
+.lo-s{font-size:.78rem;color:rgba(255,255,255,.5);line-height:1.5;margin-bottom:16px}
+.lo-p{display:flex;align-items:center;gap:12px;padding:14px;background:rgba(255,255,255,.07);border-radius:12px;margin-bottom:14px}
+.lo-av{width:52px;height:52px;border-radius:50%;background:rgba(237,36,39,.2);border:2px solid rgba(237,36,39,.4);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0}
+.lo-nm{font-size:.95rem;font-weight:700;color:#fff;margin-bottom:1px}
+.lo-tl{font-size:.73rem;color:rgba(255,255,255,.5);margin-bottom:2px}
+.lo-nmls{font-size:.66rem;color:rgba(255,255,255,.3)}
+.lo-acts{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.lo-b{padding:13px;border-radius:11px;font-family:Barlow,sans-serif;font-size:.83rem;font-weight:700;cursor:pointer;text-align:center;border:none;transition:.2s}
+.lo-p2{background:linear-gradient(135deg,#ed2427,#c41f22);color:#fff;box-shadow:0 4px 14px rgba(237,36,39,.3)}
+.lo-p2:hover{background:#c41f22}
+.lo-s2{background:rgba(255,255,255,.1);color:#fff;border:1.5px solid rgba(255,255,255,.15)}
+.lo-s2:hover{background:rgba(255,255,255,.18)}
+
+/* QUICK CALC */
+#p-calc{background:#f5f5f7}
+.cbody{padding:22px 20px 26px;flex:1;overflow-y:auto}
+.cres{background:#1a1a2e;border-radius:16px;padding:20px;margin-top:16px;display:none}
+.cres.on{display:block;animation:up .3s ease}
+.crp{font-family:"Barlow Condensed",sans-serif;font-size:2.8rem;font-weight:800;color:#fff;margin-bottom:2px}
+.crs{font-size:.78rem;color:rgba(255,255,255,.45);margin-bottom:16px}
+.crds{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+.crd{background:rgba(255,255,255,.08);border-radius:9px;padding:9px 11px}
+.crdl{font-size:.6rem;text-transform:uppercase;color:rgba(255,255,255,.4);letter-spacing:.05em;margin-bottom:1px}
+.crdv{font-size:.86rem;font-weight:700;color:#fff}
+
+/* EDIT PANEL */
+.edit-panel{display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);align-items:flex-end;justify-content:center}
+.edit-panel.on{display:flex;animation:fadeIn .25s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.edit-sheet{background:#fff;border-radius:24px 24px 0 0;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;padding:0 0 32px;box-shadow:0 -8px 40px rgba(0,0,0,.15)}
+.edit-sheet-hdr{display:flex;align-items:center;justify-content:space-between;padding:20px 20px 16px;position:sticky;top:0;background:#fff;z-index:2;border-bottom:2px solid #f0f0f0}
+.edit-sheet-hdr h2{font-family:"Barlow Condensed",sans-serif;font-size:1.4rem;font-weight:800;color:#111}
+.edit-close{background:none;border:none;font-size:1.5rem;cursor:pointer;color:#bbb;padding:4px;line-height:1}
+.edit-close:hover{color:#ed2427}
+.edit-section{padding:0 20px;margin-bottom:18px}
+.edit-sec-title{font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#ed2427;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.edit-sec-title::after{content:'';flex:1;height:1px;background:#f0f0f0}
+.edit-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.edit-row.full{grid-template-columns:1fr}
+.edit-field{display:flex;flex-direction:column;gap:5px}
+.edit-lbl{font-size:.68rem;font-weight:700;color:#888;letter-spacing:.04em;text-transform:uppercase}
+.edit-iw{position:relative}
+.edit-ipx{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#ed2427;font-weight:700;font-size:.9rem;pointer-events:none;z-index:2}
+.edit-isx{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:#ed2427;font-weight:700;font-size:.9rem;pointer-events:none;z-index:2}
+.edit-iw input{width:100%;background:#f8f8f8;border:2px solid #e8e8e8;border-radius:10px;padding:11px 13px;color:#111;font-family:Barlow,sans-serif;font-size:.92rem;font-weight:600;outline:none;transition:border-color .2s;-moz-appearance:textfield}
+.edit-iw input::-webkit-inner-spin-button{-webkit-appearance:none}
+.edit-iw input:focus{border-color:#ed2427;background:#fff}
+.edit-iw input.has-pfx{padding-left:28px}
+.edit-iw input.has-sfx{padding-right:28px}
+.edit-select{width:100%;background:#f8f8f8;border:2px solid #e8e8e8;border-radius:10px;padding:11px 13px;color:#111;font-family:Barlow,sans-serif;font-size:.92rem;font-weight:600;outline:none;transition:border-color .2s;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ed2427' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+.edit-select:focus{border-color:#ed2427}
+.edit-live-score{background:#1a1a2e;border-radius:16px;padding:18px 20px;margin:0 20px 18px;display:flex;align-items:center;justify-content:space-between}
+.els-label{font-size:.72rem;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px}
+.els-score{font-family:"Barlow Condensed",sans-serif;font-size:2.4rem;font-weight:800;color:#fff;line-height:1}
+.els-tier{font-size:.78rem;font-weight:700;color:rgba(255,255,255,.7)}
+.els-delta{font-family:"Barlow Condensed",sans-serif;font-size:1.5rem;font-weight:800;line-height:1;margin-bottom:2px}
+.els-delta.up{color:#4ade80}.els-delta.down{color:#f87171}.els-delta.same{color:rgba(255,255,255,.4)}
+.els-delta-lbl{font-size:.68rem;color:rgba(255,255,255,.4)}
+.edit-save-btn{width:calc(100% - 40px);margin:0 20px;padding:15px;background:linear-gradient(135deg,#ed2427,#c41f22);color:#fff;border:none;border-radius:13px;font-family:Barlow,sans-serif;font-size:1rem;font-weight:700;cursor:pointer;box-shadow:0 5px 18px rgba(237,36,39,.3);transition:.2s}
+.edit-save-btn:hover{transform:translateY(-1px);box-shadow:0 7px 24px rgba(237,36,39,.35)}
+
+/* SAVE / SIGNIN MODALS */
+#save-modal.on{display:flex!important}
+#signin-modal.on{display:flex!important}
+
+/* REFI */
+#p-refi{background:#f5f5f7}
+
+/* SPINR */
+.spinr{display:inline-block;width:16px;height:16px;border:2px solid rgba(237,36,39,.2);border-top-color:#ed2427;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:6px}
+
+@media(min-width:480px){.pg{max-width:480px;margin:0 auto}body{background:#e8e8ec}}
+
+/* Mapbox geocoder overrides */
+.mapboxgl-ctrl-geocoder {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-shadow: none !important;
+  border: 2px solid #e8e8e8 !important;
+  border-radius: 12px !important;
+  font-family: Barlow, sans-serif !important;
+  font-size: .97rem !important;
+}
+.mapboxgl-ctrl-geocoder:focus-within {
+  border-color: #ed2427 !important;
+  box-shadow: 0 0 0 3px rgba(237,36,39,.1) !important;
+}
+.mapboxgl-ctrl-geocoder input {
+  font-family: Barlow, sans-serif !important;
+  font-size: .97rem !important;
+  color: #111 !important;
+  padding: 13px 40px 13px 40px !important;
+  height: auto !important;
+  line-height: 1.4 !important;
+}
+.mapboxgl-ctrl-geocoder .suggestions {
+  border-radius: 12px !important;
+  border: 2px solid #e8e8e8 !important;
+  box-shadow: 0 10px 28px rgba(0,0,0,.1) !important;
+  margin-top: 4px !important;
+  font-family: Barlow, sans-serif !important;
+}
+.mapboxgl-ctrl-geocoder .suggestions li a {
+  font-family: Barlow, sans-serif !important;
+  font-size: .87rem !important;
+  color: #111 !important;
+  padding: 11px 14px !important;
+}
+.mapboxgl-ctrl-geocoder .suggestions li a:hover,
+.mapboxgl-ctrl-geocoder .suggestions .active a {
+  background: #fff5f5 !important;
+  color: #111 !important;
+}
+.mapboxgl-ctrl-geocoder--icon-search {
+  fill: #ed2427 !important;
+  top: 14px !important;
+  left: 12px !important;
+}
+.mapboxgl-ctrl-geocoder--icon-close {
+  margin-top: 4px !important;
+}
+.mapboxgl-ctrl-geocoder--powered-by {
+  display: none !important;
+}
+
+
+/* ── PROPERTY SCORE CARD ── */
+.prop-score{display:none;background:#1a1a2e;border-radius:16px;padding:18px;margin-bottom:16px;animation:up .35s ease}
+.prop-score.on{display:block}
+.ps-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.ps-title{font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.5)}
+.ps-address{font-size:.75rem;color:rgba(255,255,255,.35);margin-top:2px}
+.ps-main{display:flex;align-items:center;gap:16px;margin-bottom:14px}
+.ps-score-big{font-family:"Barlow Condensed",sans-serif;font-size:3.5rem;font-weight:800;line-height:1}
+.ps-tier{font-size:.8rem;font-weight:700;margin-top:2px}
+.ps-delta-wrap{background:rgba(255,255,255,.06);border-radius:10px;padding:10px 14px;text-align:center;min-width:90px}
+.ps-delta{font-family:"Barlow Condensed",sans-serif;font-size:1.6rem;font-weight:800;line-height:1}
+.ps-delta.up{color:#4ade80}
+.ps-delta.down{color:#f87171}
+.ps-delta.same{color:rgba(255,255,255,.4)}
+.ps-delta-lbl{font-size:.65rem;color:rgba(255,255,255,.4);margin-top:2px;font-weight:600}
+.ps-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.ps-stat{background:rgba(255,255,255,.06);border-radius:9px;padding:9px 10px}
+.ps-stat-l{font-size:.6rem;color:rgba(255,255,255,.38);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
+.ps-stat-v{font-size:.88rem;font-weight:700;color:#fff}
+</style>
+<!-- Firebase SDKs (load first, synchronously) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<!-- Mapbox -->
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
+<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.3/mapbox-gl-geocoder.css">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+<script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.3/mapbox-gl-geocoder.min.js"></script>
+</head>
+<body>
+
+<!-- ═══ LANDING ═══ -->
+<div id="p0" class="pg on">
+  <div class="land-hero">
+    <div style="margin-bottom:20px;position:relative;z-index:1;text-align:center">
+      <span style="font-family:'Arial Black',Arial,sans-serif;font-size:1.8rem;font-weight:900;color:#111;letter-spacing:-1px;line-height:1">H<span style="color:#ed2427">°</span>METRY</span>
+      <div style="font-size:.72rem;color:#aaa;letter-spacing:4px;margin-top:4px;font-weight:500">MORTGAGE READINESS</div>
+    </div>
+    <div class="land-tagline">Know Before<br>You Buy</div>
+    <p class="land-sub">Your personalized mortgage readiness score<br>and matched loan programs — in minutes.</p>
+  </div>
+  <div class="land-body">
+    <div class="land-section-title">What would you like to do?</div>
+    <div class="land-cards">
+      <button class="land-btn primary" onclick="go('p-q1')">
+        <div class="lbico">🎯</div>
+        <div>
+          <h3>Get My H°METRY</h3>
+          <p>Full readiness score + matched loan programs for any home</p>
+        </div>
+      </button>
+      <button class="land-btn" onclick="go('p-calc')">
+        <div class="lbico">🧮</div>
+        <div>
+          <h3>Quick Payment Calculator</h3>
+          <p>Estimate your monthly payment in seconds</p>
+        </div>
+      </button>
+    </div>
+    <div class="land-section-title">Why H°METRY?</div>
+    <div class="land-stats">
+      <div class="lstat"><div class="lstat-num">3min</div><div class="lstat-lbl">Average completion time</div></div>
+      <div class="lstat"><div class="lstat-num">3</div><div class="lstat-lbl">Loan programs compared</div></div>
+      <div class="lstat"><div class="lstat-num">100%</div><div class="lstat-lbl">Free to use</div></div>
+    </div>
+    <div class="land-section-title" style="margin-top:28px">Returning User?</div>
+    <div style="background:#fff;border:2px solid #f0f0f0;border-radius:18px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.06)">
+      <p style="font-size:.82rem;color:#888;line-height:1.5;margin-bottom:14px">Sign in to access your saved Readiness Score and results without re-entering your information.</p>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <!-- Signed-out state -->
+        <div class="auth-signedout" style="display:flex;flex-direction:column;gap:9px;width:100%">
+          <button onclick="signInGoogle()" style="width:100%;padding:13px;border-radius:12px;border:2px solid #e8e8e8;background:#fff;color:#111;font-family:Barlow,sans-serif;font-size:.88rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;box-shadow:0 1px 4px rgba(0,0,0,.04)">
+            <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+            Sign in with Google
+          </button>
+          <button onclick="go('p-signin')" style="width:100%;padding:13px;border-radius:12px;border:2px solid #e8e8e8;background:#fff;color:#111;font-family:Barlow,sans-serif;font-size:.88rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;box-shadow:0 1px 4px rgba(0,0,0,.04)">
+            ✉️ Sign in with Email
+          </button>
+        </div>
+        <!-- Signed-in state -->
+        <div class="auth-signedin" style="display:none;flex-direction:column;gap:10px;width:100%">
+          <div style="background:rgba(237,36,39,.06);border:2px solid rgba(237,36,39,.2);border-radius:12px;padding:14px;display:flex;align-items:center;gap:12px">
+            <div style="width:40px;height:40px;background:#ed2427;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0">👤</div>
+            <div style="flex:1">
+              <div style="font-size:.7rem;color:#888;margin-bottom:1px">Signed in as</div>
+              <div style="font-size:.88rem;font-weight:700;color:#111" id="auth-user-name">—</div>
+            </div>
+          </div>
+          <button id="btn-signout" onclick="doSignOut()" style="display:none;width:100%;padding:12px;border-radius:11px;border:2px solid #e8e8e8;background:#fff;color:#888;font-family:Barlow,sans-serif;font-size:.85rem;font-weight:600;cursor:pointer">Sign Out</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ QUICK CALC ═══ -->
+<div id="p-calc" class="pg">
+  <div class="fhdr">
+    <button class="bk" onclick="go('p0')">←</button>
+    <span style="font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:800">Quick Calculator</span>
+  </div>
+  <div class="cbody fbody">
+    <div class="eye">Estimate</div>
+    <div class="qh">Monthly Payment</div>
+    <div class="qs">Enter your loan details for a quick estimate.</div>
+    <div class="fl">Home Price</div>
+    <div class="iw"><span class="ipx">$</span><input type="number" class="px" id="cp" placeholder="350000"></div>
+    <div class="fl">Down Payment</div>
+    <div class="iw"><span class="ipx">$</span><input type="number" class="px" id="cd" placeholder="10500"></div>
+    <div class="fl">Interest Rate</div>
+    <div class="iw"><input type="number" class="sx" id="cr" placeholder="6.5"><span class="isx">%</span></div>
+    <div class="fl">Loan Term</div>
+    <div class="og" style="margin-bottom:20px">
+      <button class="oc sel" onclick="selTerm(this,30)">30 Years</button>
+      <button class="oc" onclick="selTerm(this,15)">15 Years</button>
+    </div>
+    <button class="cta" onclick="runCalc()">Calculate Payment</button>
+    <div class="cres" id="cres">
+      <div class="crp" id="crp">—</div>
+      <div class="crs">estimated monthly P&amp;I</div>
+      <div class="crds">
+        <div class="crd"><div class="crdl">Loan Amt</div><div class="crdv" id="crl">—</div></div>
+        <div class="crd"><div class="crdl">Rate</div><div class="crdv" id="crr">—</div></div>
+        <div class="crd"><div class="crdl">Term</div><div class="crdv" id="crt">—</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Q1 NAME ═══ -->
+<div id="p-q1" class="pg">
+  <div class="fhdr">
+    <button class="bk" onclick="go('p0')">←</button>
+    <div class="pbar"><div class="pfill" style="width:14%"></div></div>
+    <span class="plbl">1 of 7</span>
+  </div>
+  <div class="fbody">
+    <div class="eye">Let's Start</div>
+    <div class="qh">What's your first name?</div>
+    <div class="qs">So we can personalize your results.</div>
+    <div class="fl">First Name</div>
+    <div class="iw"><input type="text" id="q-name" placeholder="e.g. Sarah" oninput="document.getElementById('bq1').disabled=!this.value.trim()"></div>
+    <button class="cta" id="bq1" disabled onclick="S.name=document.getElementById('q-name').value.trim();go('p-q2')">Continue →</button>
+  </div>
+</div>
+
+<!-- ═══ Q2 CREDIT ═══ -->
+<div id="p-q2" class="pg">
+  <div class="fhdr">
+    <button class="bk" onclick="go('p-q1')">←</button>
+    <div class="pbar"><div class="pfill" style="width:28%"></div></div>
+    <span class="plbl">2 of 7</span>
+  </div>
+  <div class="fbody">
+    <div class="eye">Credit Profile</div>
+    <div class="qh">What's your credit score?</div>
+    <div class="qs">Enter your score directly, or select a range if you're not sure.</div>
+    <div class="ctog">
+      <button class="ctbtn sel" id="ct1" onclick="showCreditEnter()">I Know My Score</button>
+      <button class="ctbtn" id="ct2" onclick="showCreditRange()">Select a Range</button>
+    </div>
+    <div class="csec on" id="cs-enter">
+      <div class="fl">FICO Score (300–850)</div>
+      <div class="iw"><input type="number" id="q-fico" placeholder="720" min="300" max="850" oninput="ficoInput(this.value)"></div>
+      <div class="flbl" id="fico-lbl"></div>
+    </div>
+    <div class="csec" id="cs-range">
+      <div class="og one">
+        <button class="oc" onclick="selRange(this,'760+')">760+ <span style="color:#bbb;font-weight:400">Excellent</span></button>
+        <button class="oc" onclick="selRange(this,'740-759')">740–759 <span style="color:#bbb;font-weight:400">Very Good</span></button>
+        <button class="oc" onclick="selRange(this,'720-739')">720–739 <span style="color:#bbb;font-weight:400">Very Good</span></button>
+        <button class="oc" onclick="selRange(this,'700-719')">700–719 <span style="color:#bbb;font-weight:400">Good</span></button>
+        <button class="oc" onclick="selRange(this,'680-699')">680–699 <span style="color:#bbb;font-weight:400">Good</span></button>
+        <button class="oc" onclick="selRange(this,'660-679')">660–679 <span style="color:#bbb;font-weight:400">Fair</span></button>
+        <button class="oc" onclick="selRange(this,'640-659')">640–659 <span style="color:#bbb;font-weight:400">Fair</span></button>
+        <button class="oc" onclick="selRange(this,'620-639')">620–639 <span style="color:#bbb;font-weight:400">Below Avg</span></button>
+        <button class="oc" onclick="selRange(this,'580-619')">580–619 <span style="color:#bbb;font-weight:400">Poor</span></button>
+        <button class="oc" onclick="selRange(this,'below-580')">Below 580 <span style="color:#bbb;font-weight:400">Rebuilding</span></button>
+      </div>
+    </div>
+    <button class="cta" id="bq2" disabled onclick="go('p-q3')">Continue →</button>
+  </div>
+</div>
+
+<!-- ═══ Q3 EMPLOYMENT ═══ -->
+<div id="p-q3" class="pg">
+  <div class="fhdr">
+    <button class="bk" onclick="go('p-q2')">←</button>
+    <div class="pbar"><div class="pfill" style="width:42%"></div></div>
+    <span class="plbl">3 of 7</span>
+  </div>
+  <div class="fbody">
+    <div class="eye">Income</div>
+    <div class="qh">How are you employed?</div>
+    <div class="qs">This determines how we calculate your qualifying income.</div>
+    <div class="og">
+      <button class="oc" onclick="selEmp(this,'w2')"><div class="oi">💼</div><div class="ol">W-2 Employee</div><div class="os">Full or part-time</div></button>
+      <button class="oc" onclick="selEmp(this,'schedule-c')"><div class="oi">📋</div><div class="ol">Sole Prop / 1099</div><div class="os">Schedule C filer</div></button>
+      <button class="oc" onclick="selEmp(this,'s-corp')"><div class="oi">🏢</div><div class="ol">S-Corp Owner</div><div class="os">W-2 + distributions</div></button>
+      <button class="oc" onclick="selEmp(this,'partnership')"><div class="oi">🤝</div><div class="ol">Partnership</div><div class="os">Schedule E / K-1</div></button>
+    </div>
+    <div class="sebox" id="se-w2">
+      <h4>💼 W-2 Income</h4>
+      <div class="fl">Gross Monthly Income</div>
+      <div class="iw"><span class="ipx">$</span><input type="number" class="px" id="iw2" placeholder="6500" oninput="setIncome(this.value)"></div>
+    </div>
+    <div class="sebox" id="se-schedule-c">
+      <h4>📋 Schedule C — Sole Prop / 1099</h4><p class="nt">We average your last 2 years of net profit:</p>
+      <div class="trow"><div class="ttag">Line 7</div><input type="number" id="sg1" placeholder="Year 1 Gross Receipts" oninput="calcSC()"></div>
+      <div class="trow"><div class="ttag">Line 28</div><input type="number" id="se1" placeholder="Year 1 Total Expenses" oninput="calcSC()"></div>
+      <div class="trow"><div class="ttag">Line 7</div><input type="number" id="sg2" placeholder="Year 2 Gross Receipts" oninput="calcSC()"></div>
+      <div class="trow"><div class="ttag">Line 28</div><input type="number" id="se2" placeholder="Year 2 Total Expenses" oninput="calcSC()"></div>
+      <div class="seres" id="scr">Qualifying Monthly Income: <strong id="scm">—</strong></div>
+    </div>
+    <div class="sebox" id="se-s-corp">
+      <h4>🏢 S-Corp Owner</h4><p class="nt">W-2 wages + ordinary income, averaged 2 years:</p>
+      <div class="trow"><div class="ttag">W-2 Box 5</div><input type="number" id="sw1" placeholder="Year 1 W-2 Wages" oninput="calcScorp()"></div>
+      <div class="trow"><div class="ttag">K-1 Box 1</div><input type="number" id="sd1" placeholder="Year 1 Ordinary Income" oninput="calcScorp()"></div>
+      <div class="trow"><div class="ttag">W-2 Box 5</div><input type="number" id="sw2" placeholder="Year 2 W-2 Wages" oninput="calcScorp()"></div>
+      <div class="trow"><div class="ttag">K-1 Box 1</div><input type="number" id="sd2" placeholder="Year 2 Ordinary Income" oninput="calcScorp()"></div>
+      <div class="seres" id="scr2">Qualifying Monthly Income: <strong id="scm2">—</strong></div>
+    </div>
+    <div class="sebox" id="se-partnership">
+      <h4>🤝 Partnership / Schedule E</h4><p class="nt">Your share of partnership income, averaged 2 years:</p>
+      <div class="trow"><div class="ttag">Sch E Pg2 Col J</div><input type="number" id="ps1" placeholder="Year 1 Net Income (your share)" oninput="calcPs()"></div>
+      <div class="trow"><div class="ttag">Sch E Pg2 Col J</div><input type="number" id="ps2" placeholder="Year 2 Net Income (your share)" oninput="calcPs()"></div>
+      <div class="seres" id="scr3">Qualifying Monthly Income: <strong id="scm3">—</strong></div>
+    </div>
+    <button class="cta" id="bq3" disabled onclick="go('p-q4')" style="margin-top:12px">Continue →</button>
+  </div>
+</div>
+
+<!-- ═══ Q4 DEBTS ═══ -->
+<div id="p-q4" class="pg">
+  <div class="fhdr">
+    <button class="bk" onclick="go('p-q3')">←</button>
+    <div class="pbar"><div class="pfill" style="width:56%"></div></div>
+    <span class="plbl">4 of 7</span>
+  </div>
+  <div class="fbody">
+    <div class="eye">Debt</div>
+    <div class="qh">Monthly debt payments?</div>
+    <div class="qs">Include all minimums: auto, student loans, credit cards. Do NOT include rent.</div>
+    <div class="fl">Total Monthly Debts</div>
+    <div class="iw"><span class="ipx">$</span><input type="number" class="px" id="q-debts" placeholder="750" oninput="document.getElementById('bq4').disabled=this.value===''||parseFloat(this.value)<0"></div>
+    <button class="cta" id="bq4" disabled onclick="S.debts=parseFloat(document.getElementById('q-debts').value)||0;go('p-q5')">Continue →</button>
+  </div>
+</div>
+
+<!-- ═══ Q5 HOME & RATE ═══ -->
+<div id="p-q5" class="pg">
+  <div class="fhdr">
+    <button class="bk" onclick="go('p-q4')">←</button>
+    <div class="pbar"><div class="pfill" style="width:70%"></div></div>
+    <span class="plbl">5 of 7</span>
+  </div>
+  <div class="fbody">
+    <div class="eye">Target Home</div>
+    <div class="qh">Target home price?</div>
+    <div class="qs">Your best estimate is fine — this calculates your front-end ratio.</div>
+    <div class="fl">Purchase Price</div>
+    <div class="iw"><span class="ipx">$</span><input type="number" class="px" id="q-price" placeholder="350000" oninput="chk5();updateDpPresets()"></div>
+    <div class="fl">Expected Interest Rate</div>
+    <div class="iw"><input type="number" class="sx" id="q-rate" placeholder="6.5" oninput="chk5()"><span class="isx">%</span></div>
+    <button class="cta" id="bq5" disabled onclick="S.homePrice=parseFloat(document.getElementById('q-price').value)||0;S.rate=parseFloat(document.getElementById('q-rate').value)||0;go('p-q6')">Continue →</button>
+  </div>
+</div>
+
+<!-- ═══ Q6 ASSETS ═══ -->
+<div id="p-q6" class="pg">
+  <div class="fhdr">
+    <button class="bk" onclick="go('p-q5')">←</button>
+    <div class="pbar"><div class="pfill" style="width:84%"></div></div>
+    <span class="plbl">6 of 7</span>
+  </div>
+  <div class="fbody">
+    <div class="eye">Assets</div>
+    <div class="qh">How much do you have saved?</div>
+    <div class="qs">Include checking, savings, and retirement (use 60% of retirement value). Closing costs are typically 2–3% of purchase price.</div>
+    <div class="fl">Total Verified Assets</div>
+    <div class="iw"><span class="ipx">$</span><input type="number" class="px" id="q-assets" placeholder="25000" oninput="chk6()"></div>
+
+    <div class="fl" style="margin-top:6px">Planned Down Payment</div>
+    <div style="background:#fff;border:2px solid #e8e8e8;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.04)">
+      <div style="font-size:.75rem;color:#888;margin-bottom:12px;line-height:1.5">Select a down payment amount or enter a custom amount. <strong style="color:#ed2427">Minimum Down</strong> picks the lowest amount based on your credit profile.</div>
+      <div class="dp-presets" style="grid-template-columns:repeat(3,1fr)">
+        <button class="dp-preset" onclick="selDpPreset(this,5)" data-pct="5">
+          <span class="dp-pct">5%</span>
+          <span class="dp-amt" id="dp-5">—</span>
+        </button>
+        <button class="dp-preset" onclick="selDpPreset(this,10)" data-pct="10">
+          <span class="dp-pct">10%</span>
+          <span class="dp-amt" id="dp-10">—</span>
+        </button>
+        <button class="dp-preset" onclick="selDpPreset(this,20)" data-pct="20">
+          <span class="dp-pct">20%</span>
+          <span class="dp-amt" id="dp-20">—</span>
+        </button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button class="dp-preset" style="flex:1" onclick="selDpPreset(this,'min')" data-pct="min">
+          <span class="dp-pct" style="font-size:.78rem">⚡ Min Down</span>
+          <span class="dp-amt" id="dp-min">Based on credit</span>
+        </button>
+        <button class="dp-preset" style="flex:1" onclick="selDpCustom(this)" data-pct="custom">
+          <span class="dp-pct" style="font-size:.78rem">✏️ Custom</span>
+          <span class="dp-amt">Enter amount</span>
+        </button>
+      </div>
+      <div class="dp-custom" id="dp-custom-wrap">
+        <div class="iw" style="margin-bottom:0"><span class="ipx">$</span><input type="number" class="px" id="q-down-custom" placeholder="Enter custom down payment" oninput="dpCustomInput(this.value)"></div>
+      </div>
+      <input type="hidden" id="q-down" value="">
+    </div>
+    <button class="cta" id="bq6" disabled onclick="S.assets=parseFloat(document.getElementById('q-assets').value)||0;S.down=parseFloat(document.getElementById('q-down').value)||0;go('p-q7')">Continue →</button>
+  </div>
+</div>
+
+<!-- ═══ Q7 VA ═══ -->
+<div id="p-q7" class="pg">
+  <div class="fhdr">
+    <button class="bk" onclick="go('p-q6')">←</button>
+    <div class="pbar"><div class="pfill" style="width:100%"></div></div>
+    <span class="plbl">7 of 7</span>
+  </div>
+  <div class="fbody">
+    <div class="eye">Eligibility</div>
+    <div class="qh">Veteran or active-duty?</div>
+    <div class="qs">VA loans offer zero down payment, no PMI, and no maximum DTI.</div>
+    <div class="og">
+      <button class="oc" onclick="S.isVA=true;calcScore()"><div class="oi">🇺🇸</div><div class="ol">Yes</div><div class="os">Veteran / Active Duty</div></button>
+      <button class="oc" onclick="S.isVA=false;calcScore()"><div class="oi">👤</div><div class="ol">No</div><div class="os">Civilian</div></button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ RESULTS + MATCH (COMBINED) ═══ -->
+<div id="p-res" class="pg">
+
+  <!-- ── RED HERO HEADER ── -->
+  <div class="res-hdr">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;position:relative;z-index:1">
+      <button onclick="go('p-q7')" style="background:rgba(237,36,39,.08);border:1.5px solid rgba(237,36,39,.2);border-radius:10px;padding:7px 14px;color:#ed2427;font-family:Barlow,sans-serif;font-size:.75rem;font-weight:600;cursor:pointer">← Retake</button>
+      <button onclick="openEdit()" style="background:rgba(237,36,39,.08);border:1.5px solid rgba(237,36,39,.2);border-radius:10px;padding:7px 14px;color:#ed2427;font-family:Barlow,sans-serif;font-size:.75rem;font-weight:600;cursor:pointer">✏️ Edit</button>
+    </div>
+    <div style="width:80px;height:80px;background:#ed2427;border-radius:18px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px"><span style="font-family:'Arial Black',Arial,sans-serif;font-size:2.4rem;font-weight:900;color:#fff;letter-spacing:-1px">H°</span></div>
+    <div class="rg"<div style="font-size:.78rem;color:#aaa;margin-bottom:2px;font-weight:600;letter-spacing:.04em;text-transform:uppercase" id="rg" style="position:relative;z-index:1">Your Results</div>
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:800;color:#111;margin-bottom:20px" style="position:relative;z-index:1">Readiness Score</div>
+
+    <!-- GAUGE -->
+    <div class="gw">
+      <div style="position:relative;width:100%;max-width:300px;margin:0 auto">
+        <svg viewBox="0 0 320 195" style="width:100%;height:auto;overflow:visible" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="gg" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#f87171"/>
+              <stop offset="30%" stop-color="#fb923c"/>
+              <stop offset="55%" stop-color="#fbbf24"/>
+              <stop offset="78%" stop-color="#a3e635"/>
+              <stop offset="100%" stop-color="#22c55e"/>
+            </linearGradient>
+          </defs>
+          <path style="fill:none;stroke:rgba(0,0,0,.06);stroke-width:22;stroke-linecap:round" d="M 20 170 A 140 140 0 0 1 300 170"/>
+          <path class="g-glow" id="g-glow" d="M 20 170 A 140 140 0 0 1 300 170" stroke="#ed2427" stroke-dasharray="440" stroke-dashoffset="440"/>
+          <path class="g-arc"  id="g-arc"  d="M 20 170 A 140 140 0 0 1 300 170" stroke="#ed2427" stroke-dasharray="440" stroke-dashoffset="440"/>
+          <text style="font-family:'Barlow Condensed',sans-serif;font-size:86px;font-weight:800;fill:#111;text-anchor:middle;letter-spacing:-2px" id="g-num" x="160" y="138">0</text>
+          <text style="font-family:Barlow,sans-serif;font-size:11px;font-weight:600;fill:#aaa;text-anchor:middle;letter-spacing:.1em;text-transform:uppercase" x="160" y="158">OUT OF 100</text>
+          <text style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;fill:#111;text-anchor:middle;letter-spacing:.06em;text-transform:uppercase" id="g-tier" x="160" y="180">—</text>
+          <text style="font-family:Barlow,sans-serif;font-size:11px;font-weight:600;fill:#bbb" x="16" y="188">0</text>
+          <text style="font-family:Barlow,sans-serif;font-size:11px;font-weight:600;fill:#bbb" x="296" y="188" text-anchor="end">100</text>
+        </svg>
+      </div>
+    </div>
+
+    <!-- BREAKDOWN BARS -->
+    <div class="bkdn">
+      <div class="bb"><div style="font-size:.62rem;color:#999;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Credit (35%)</div><div class="bbt"><div class="bbf" id="bb1" style="width:0%;background:#60a5fa"></div></div><div style="font-size:.9rem;font-weight:700;color:#111" id="bv1">—</div></div>
+      <div class="bb"><div style="font-size:.62rem;color:#999;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">DTI (30%)</div><div class="bbt"><div class="bbf" id="bb2" style="width:0%;background:#4ade80"></div></div><div style="font-size:.9rem;font-weight:700;color:#111" id="bv2">—</div></div>
+      <div class="bb"><div style="font-size:.62rem;color:#999;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Assets (20%)</div><div class="bbt"><div class="bbf" id="bb3" style="width:0%;background:#fbbf24"></div></div><div style="font-size:.9rem;font-weight:700;color:#111" id="bv3">—</div></div>
+      <div class="bb"><div style="font-size:.62rem;color:#999;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Front-End (15%)</div><div class="bbt"><div class="bbf" id="bb4" style="width:0%;background:#f87171"></div></div><div style="font-size:.9rem;font-weight:700;color:#111" id="bv4">—</div></div>
+    </div>
+  </div>
+
+  <!-- ── SCROLLABLE BODY ── -->
+  <div class="res-body" style="padding-bottom:40px">
+
+    <!-- SCORE STATS -->
+    <div class="score-summary">
+      <h3>Score Breakdown</h3>
+      <div class="score-detail-grid">
+        <div class="scd"><div class="scd-l">Back-End DTI</div><div class="scd-v" id="sd-dti">—</div></div>
+        <div class="scd"><div class="scd-l">Front-End Ratio</div><div class="scd-v" id="sd-fe">—</div></div>
+        <div class="scd"><div class="scd-l">Monthly Income</div><div class="scd-v" id="sd-inc">—</div></div>
+        <div class="scd"><div class="scd-l">Housing Payment</div><div class="scd-v" id="sd-hpmt">—</div></div>
+      </div>
+    </div>
+
+    <!-- SAVE RESULTS — compact banner -->
+    <div style="background:#1a1a2e;border-radius:14px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 3px 12px rgba(0,0,0,.12)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.85rem;font-weight:700;color:#fff;margin-bottom:3px">💾 Save Your Results</div>
+        <div style="font-size:.72rem;color:rgba(255,255,255,.5);line-height:1.4">Free account — come back anytime without re-entering</div>
+      </div>
+      <button onclick="go('p-signup')" style="background:#ed2427;border:none;border-radius:9px;padding:10px 16px;color:#fff;font-family:Barlow,sans-serif;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0" style="background:#ed2427;border:none;border-radius:9px;padding:10px 16px;color:#fff;font-family:Barlow,sans-serif;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;box-shadow:0 3px 10px rgba(237,36,39,.3)">Sign Up Free</button>
+    </div>
+
+    <!-- ACTION BUTTONS -->
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+
+      <!-- H°METRY -->
+      <button onclick="go('p-match')" style="width:100%;background:#fff;border:2px solid #e8e8e8;border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:14px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.06);transition:.2s;text-align:left" onmouseover="this.style.borderColor='#ed2427';this.style.transform='translateY(-1px)'" onmouseout="this.style.borderColor='#e8e8e8';this.style.transform=''">
+        <div style="width:44px;height:44px;background:#fff5f5;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0">🏠</div>
+        <div style="flex:1">
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.05rem;font-weight:800;color:#111;margin-bottom:2px">View My H°METRY</div>
+          <div style="font-size:.73rem;color:#aaa">Enter an address and see matched loan programs</div>
+        </div>
+        <div style="color:#ed2427;font-size:1.1rem;font-weight:700">›</div>
+      </button>
+
+      <!-- Refinance -->
+      <button onclick="go('p-refi')" style="width:100%;background:#fff;border:2px solid #e8e8e8;border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:14px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.06);transition:.2s;text-align:left" onmouseover="this.style.borderColor='#ed2427';this.style.transform='translateY(-1px)'" onmouseout="this.style.borderColor='#e8e8e8';this.style.transform=''">
+        <div style="width:44px;height:44px;background:#fff5f5;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0">🔄</div>
+        <div style="flex:1">
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.05rem;font-weight:800;color:#111;margin-bottom:2px">Help Me Refinance</div>
+          <div style="font-size:.73rem;color:#aaa">See if you can lower your rate and save monthly</div>
+        </div>
+        <div style="color:#ed2427;font-size:1.1rem;font-weight:700">›</div>
+      </button>
+
+      <!-- Debt Simulator — only shown when DTI > 40 -->
+      <button id="btn-sim-action" onclick="go('p-sim')" style="display:none;width:100%;background:#fff5f5;border:2px solid rgba(237,36,39,.25);border-radius:14px;padding:16px 18px;align-items:center;gap:14px;cursor:pointer;box-shadow:0 2px 10px rgba(237,36,39,.08);transition:.2s;text-align:left" onmouseover="this.style.borderColor='#ed2427';this.style.transform='translateY(-1px)'" onmouseout="this.style.borderColor='rgba(237,36,39,.25)';this.style.transform=''">
+        <div style="width:44px;height:44px;background:rgba(237,36,39,.08);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0">💡</div>
+        <div style="flex:1">
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.05rem;font-weight:800;color:#111;margin-bottom:2px">Debt Payoff Simulator</div>
+          <div style="font-size:.73rem;color:#888">Your DTI is high — find the fastest path to qualify</div>
+        </div>
+        <div style="color:#ed2427;font-size:1.1rem;font-weight:700">›</div>
+      </button>
+
+    </div>
+
+    <!-- SECONDARY ACTIONS -->
+    <div style="display:flex;gap:10px">
+      <button onclick="openEdit()" style="flex:1;padding:12px;background:#fff;border:2px solid #e8e8e8;border-radius:12px;font-family:Barlow,sans-serif;font-size:.82rem;font-weight:700;color:#111;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;box-shadow:0 1px 6px rgba(0,0,0,.05)">
+        ✏️ Edit My Info
+      </button>
+      <button onclick="toDash()" style="flex:1;padding:12px;background:#fff;border:2px solid #e8e8e8;border-radius:12px;font-family:Barlow,sans-serif;font-size:.82rem;font-weight:700;color:#111;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;box-shadow:0 1px 6px rgba(0,0,0,.05)">
+        📊 Dashboard
+      </button>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ═══ DASHBOARD ═══ -->
+<div id="p-dash" class="pg">
+  <div class="dhdr">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;position:relative;z-index:1">
+      <button onclick="go('p-res');setTimeout(drawGauge,300)" style="background:rgba(237,36,39,.08);border:1.5px solid rgba(237,36,39,.2);border-radius:10px;padding:7px 14px;color:#ed2427;font-family:Barlow,sans-serif;font-size:.78rem;font-weight:600;cursor:pointer;transition:.2s">
+        ← My Results
+      </button>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:.72rem;color:#aaa;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Dashboard</span>
+        <button onclick="doSignOut()" style="background:none;border:1.5px solid #e8e8e8;border-radius:8px;padding:5px 11px;color:#999;font-family:Barlow,sans-serif;font-size:.72rem;font-weight:600;cursor:pointer">Sign Out</button>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <div style="width:44px;height:44px;background:#ed2427;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="font-family:'Arial Black',Arial,sans-serif;font-size:1.3rem;font-weight:900;color:#fff;letter-spacing:-1px">H°</span></div>
+      <span style="font-family:'Arial Black',Arial,sans-serif;font-size:1.1rem;font-weight:900;color:#111;letter-spacing:0px;line-height:1">H<span style="color:#ed2427">°</span>METRY</span>
+    </div>
+    <div style="font-size:.78rem;color:#aaa;margin-bottom:3px;font-weight:600;letter-spacing:.04em;text-transform:uppercase"<div class="dg"<div class="dg" id="d-greet">Welcome back</div>
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.6rem;font-weight:800;color:#111;margin-bottom:20px">Your Readiness Score</div>
+    <div class="mgw">
+      <svg width="74" height="74" viewBox="0 0 80 80" style="overflow:visible">
+        <circle cx="40" cy="40" r="30" fill="none" stroke="rgba(0,0,0,.08)" stroke-width="9"/>
+        <circle cx="40" cy="40" r="30" fill="none" id="mini-arc" stroke="#ed2427" stroke-width="9"
+          stroke-linecap="round" stroke-dasharray="188" stroke-dashoffset="188"
+          transform="rotate(-90 40 40)" style="transition:stroke-dashoffset 1.4s ease"/>
+      </svg>
+      <div>
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:3rem;font-weight:800;line-height:1;color:#111" id="mini-score" style="color:#fff">—</div>
+        <div style="font-size:.82rem;font-weight:600;margin-top:3px;color:#777" id="mini-tier" style="color:rgba(255,255,255,.65)">—</div>
+      </div>
+    </div>
+  </div>
+  <div class="dbody">
+
+    <!-- PRIMARY ACTION CARDS -->
+    <div style="display:flex;flex-direction:column;gap:13px;margin:22px 0 24px">
+
+      <!-- H°METRY -->
+      <button onclick="go('p-res')" style="width:100%;background:#ffffff;border:none;border-radius:18px;padding:20px;display:flex;align-items:center;gap:16px;cursor:pointer;box-shadow:0 3px 14px rgba(0,0,0,.08);border:2px solid #f0f0f0;transition:.2s;text-align:left" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform=''">
+        <div style="width:52px;height:52px;background:#fff5f5;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;flex-shrink:0">🏠</div>
+        <div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.15rem;font-weight:800;color:#111;margin-bottom:3px">My H°METRY</div>
+          <div style="font-size:.76rem;color:#888;line-height:1.4">View your readiness score, search homes &amp; see your matched loan programs</div>
+        </div>
+        <div style="color:#999;font-size:1.1rem;flex-shrink:0;margin-left:auto">›</div>
+      </button>
+
+      <!-- Refinance -->
+      <button onclick="go('p-refi')" style="width:100%;background:#fff;border:2px solid #e8e8e8;border-radius:18px;padding:20px;display:flex;align-items:center;gap:16px;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.06);transition:.2s;text-align:left" onmouseover="this.style.borderColor='#ed2427';this.style.transform='translateY(-1px)'" onmouseout="this.style.borderColor='#e8e8e8';this.style.transform=''">
+        <div style="width:52px;height:52px;background:#fff5f5;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;flex-shrink:0">🔄</div>
+        <div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.15rem;font-weight:800;color:#111;margin-bottom:3px">Help Me Refinance</div>
+          <div style="font-size:.76rem;color:#aaa;line-height:1.4">See if you can lower your current rate and reduce your monthly payment</div>
+        </div>
+        <div style="color:#ccc;font-size:1.1rem;flex-shrink:0;margin-left:auto">›</div>
+      </button>
+
+    </div>
+
+    <div class="stl">Credit Tips</div>
+    <div class="tips">
+      <div class="tip"><div class="tpi">💳</div><div><div class="tpt">Keep Utilization Below 30%</div><div class="tps">Utilization is 30% of your score. Paying below 30% of your limit can add 20–40 points quickly.</div></div></div>
+      <div class="tip"><div class="tpi">📅</div><div><div class="tpt">Never Miss a Payment</div><div class="tps">Payment history is 35% of your score. Set autopay on every account at least 6 months before applying.</div></div></div>
+      <div class="tip"><div class="tpi">🚫</div><div><div class="tpt">Avoid New Credit Accounts</div><div class="tps">Each hard inquiry can drop your score 5–10 points. Avoid new credit 6 months before your mortgage.</div></div></div>
+      <div class="tip"><div class="tpi">🏦</div><div><div class="tpt">Build Your Reserves</div><div class="tps">Lenders want 2–6 months of payments in savings after closing. It signals stability and reduces your risk.</div></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ REFINANCE SCREEN ═══ -->
+<div id="p-refi" class="pg">
+  <div class="fhdr">
+    <button class="bk" onclick="go('p-dash')">←</button>
+    <span style="font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:800">Help Me Refinance</span>
+  </div>
+  <div class="fbody">
+    <div class="eye">Refinance</div>
+    <div class="qh">Let's see if you can save</div>
+    <div class="qs">Enter your current loan details and we'll show you how much you could save by refinancing.</div>
+    <div class="fl">Current Loan Balance</div>
+    <div class="iw"><span class="ipx">$</span><input type="number" class="px" id="rf-balance" placeholder="280000" oninput="chkRefi()"></div>
+    <div class="fl">Current Interest Rate</div>
+    <div class="iw"><input type="number" class="sx" id="rf-cur-rate" placeholder="7.5" oninput="chkRefi()"><span class="isx">%</span></div>
+    <div class="fl">New Rate (Estimated)</div>
+    <div class="iw"><input type="number" class="sx" id="rf-new-rate" placeholder="6.0" oninput="chkRefi()"><span class="isx">%</span></div>
+    <div class="fl">Remaining Term</div>
+    <div class="og" style="margin-bottom:20px">
+      <button class="oc sel" onclick="selRefiTerm(this,30)">30 Years</button>
+      <button class="oc" onclick="selRefiTerm(this,20)">20 Years</button>
+      <button class="oc" onclick="selRefiTerm(this,15)">15 Years</button>
+      <button class="oc" onclick="selRefiTerm(this,10)">10 Years</button>
+    </div>
+    <button class="cta" id="b-refi-calc" disabled onclick="calcRefi()">Calculate My Savings</button>
+
+    <!-- Refi Results -->
+    <div id="refi-results" style="display:none;margin-top:20px;animation:up .35s ease">
+      <div style="background:#ffffff;border-radius:18px;padding:20px;margin-bottom:12px">
+        <div style="font-size:.68rem;color:#bbb;text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px">Your Refinance Summary</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+          <div style="background:rgba(255,255,255,.07);border-radius:10px;padding:13px">
+            <div style="font-size:.62rem;color:rgba(255,255,255,.38);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Current Payment</div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.5rem;font-weight:800;color:#f87171" id="rf-cur-pmt">—</div>
+          </div>
+          <div style="background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);border-radius:10px;padding:13px">
+            <div style="font-size:.62rem;color:rgba(255,255,255,.38);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">New Payment</div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.5rem;font-weight:800;color:#4ade80" id="rf-new-pmt">—</div>
+          </div>
+          <div style="background:rgba(255,255,255,.07);border-radius:10px;padding:13px">
+            <div style="font-size:.62rem;color:rgba(255,255,255,.38);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Monthly Savings</div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.5rem;font-weight:800;color:#fff" id="rf-monthly-save">—</div>
+          </div>
+          <div style="background:rgba(255,255,255,.07);border-radius:10px;padding:13px">
+            <div style="font-size:.62rem;color:rgba(255,255,255,.38);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Total Lifetime Savings</div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.5rem;font-weight:800;color:#fff" id="rf-total-save">—</div>
+          </div>
+        </div>
+        <div style="font-size:.8rem;color:#aaa;line-height:1.5;padding:12px;background:rgba(255,255,255,.05);border-radius:9px" id="rf-msg"></div>
+      </div>
+      <!-- LO card for refi -->
+      <div class="locard on">
+        <div class="lo-eye">Ready to lock in a lower rate?</div>
+        <div class="lo-h">Talk to a Loan Officer</div>
+        <div class="lo-s">A licensed loan officer can review your current loan and find you the best refinance options available today.</div>
+        <div class="lo-p">
+          <div class="lo-av">👤</div>
+          <div><div class="lo-nm">Your Local Loan Officer</div><div class="lo-tl">Refinance Specialist</div><div class="lo-nmls">NMLS #000000</div></div>
+        </div>
+        <div class="lo-acts">
+          <button class="lo-b lo-p2" onclick="alert('Apply coming soon!')">Get My Refi Quote →</button>
+          <button class="lo-b lo-s2" onclick="alert('Call coming soon!')">📞 Call Me</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- SAVE MODAL -->
+<div id="save-modal" style="display:none;position:fixed;inset:0;z-index:998;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);align-items:flex-end;justify-content:center" onclick="if(event.target===this)closeSaveModal()">
+  <div style="background:#fff;border-radius:24px 24px 0 0;width:100%;max-width:480px;padding:24px 24px 36px;box-shadow:0 -8px 40px rgba(0,0,0,.2)">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.5rem;font-weight:800;color:#111;margin-bottom:6px">💾 Save to H°METRY</div>
+      <div style="font-size:.82rem;color:#888;line-height:1.5">Create a free account to save your score and come back anytime without re-entering your information.</div>
+    </div>
+    <div class="auth-loading" style="display:none;text-align:center;padding:10px;color:#888;font-size:.85rem">Signing in…</div>
+    <!-- Social buttons -->
+    <div id="social-btns" style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px">
+      <button class="auth-submit-btn" onclick="signInGoogle()" style="width:100%;padding:14px;border-radius:12px;border:2px solid #e8e8e8;background:#fff;color:#111;font-family:Barlow,sans-serif;font-size:.9rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 1px 4px rgba(0,0,0,.05)">
+        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Continue with Google
+      </button>
+      <button class="auth-submit-btn" onclick="showEmailForm()" style="width:100%;padding:14px;border-radius:12px;border:2px solid #e8e8e8;background:#fff;color:#111;font-family:Barlow,sans-serif;font-size:.9rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 1px 4px rgba(0,0,0,.05)">
+        ✉️ Continue with Email
+      </button>
+    </div>
+    <!-- Email sign-up form -->
+    <div id="email-form" style="display:none;flex-direction:column;gap:10px;margin-bottom:12px">
+      <input id="auth-name" type="text" placeholder="First Name" style="width:100%;padding:13px 14px;border-radius:11px;border:2px solid #e8e8e8;font-family:Barlow,sans-serif;font-size:.9rem;outline:none">
+      <input id="auth-email" type="email" placeholder="Email address" style="width:100%;padding:13px 14px;border-radius:11px;border:2px solid #e8e8e8;font-family:Barlow,sans-serif;font-size:.9rem;outline:none">
+      <input id="auth-pass" type="password" placeholder="Password (6+ characters)" style="width:100%;padding:13px 14px;border-radius:11px;border:2px solid #e8e8e8;font-family:Barlow,sans-serif;font-size:.9rem;outline:none">
+      <button class="auth-submit-btn" onclick="signUpEmail()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#ffffff;color:#fff;font-family:Barlow,sans-serif;font-size:.9rem;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(237,36,39,.3)">Create Free Account →</button>
+      <button onclick="document.getElementById('email-form').style.display='none';document.getElementById('social-btns').style.display='flex'" style="background:none;border:none;color:#aaa;font-size:.8rem;cursor:pointer;font-family:Barlow,sans-serif;padding:4px">← Back</button>
+    </div>
+    <div style="text-align:center;margin-top:4px">
+      <span style="font-size:.78rem;color:#aaa">Already have an account? </span>
+      <button onclick="closeSaveModal();showSignInModal()" style="background:none;border:none;color:#ed2427;font-size:.78rem;font-weight:700;cursor:pointer;font-family:Barlow,sans-serif">Sign In</button>
+    </div>
+    <button onclick="closeSaveModal()" style="width:100%;background:none;border:none;color:#ccc;font-size:.79rem;cursor:pointer;font-family:Barlow,sans-serif;padding:10px;margin-top:4px">No thanks, continue without saving</button>
+  </div>
+</div>
+
+<!-- SIGN IN MODAL -->
+<div id="signin-modal" style="display:none;position:fixed;inset:0;z-index:998;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);align-items:flex-end;justify-content:center" onclick="if(event.target===this)closeSignInModal()">
+  <div style="background:#fff;border-radius:24px 24px 0 0;width:100%;max-width:480px;padding:24px 24px 36px;box-shadow:0 -8px 40px rgba(0,0,0,.2)">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.5rem;font-weight:800;color:#111;margin-bottom:6px">Welcome Back</div>
+      <div style="font-size:.82rem;color:#888;line-height:1.5">Sign in to restore your saved score and profile.</div>
+    </div>
+    <div class="auth-loading" style="display:none;text-align:center;padding:10px;color:#888;font-size:.85rem">Signing in…</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+      <button class="auth-submit-btn" onclick="signInGoogle()" style="width:100%;padding:14px;border-radius:12px;border:2px solid #e8e8e8;background:#fff;color:#111;font-family:Barlow,sans-serif;font-size:.9rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 1px 4px rgba(0,0,0,.05)">
+        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Sign in with Google
+      </button>
+      <input id="signin-email" type="email" placeholder="Email address" style="width:100%;padding:13px 14px;border-radius:11px;border:2px solid #e8e8e8;font-family:Barlow,sans-serif;font-size:.9rem;outline:none">
+      <input id="signin-pass" type="password" placeholder="Password" style="width:100%;padding:13px 14px;border-radius:11px;border:2px solid #e8e8e8;font-family:Barlow,sans-serif;font-size:.9rem;outline:none">
+      <button class="auth-submit-btn" onclick="signInEmail()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#ffffff;color:#fff;font-family:Barlow,sans-serif;font-size:.9rem;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(237,36,39,.3)">Sign In →</button>
+    </div>
+    <div style="text-align:center">
+      <span style="font-size:.78rem;color:#aaa">No account? </span>
+      <button onclick="closeSignInModal();document.getElementById('save-modal').classList.add('on')" style="background:none;border:none;color:#ed2427;font-size:.78rem;font-weight:700;cursor:pointer;font-family:Barlow,sans-serif">Create one free</button>
+    </div>
+    <button onclick="closeSignInModal()" style="width:100%;background:none;border:none;color:#ccc;font-size:.79rem;cursor:pointer;font-family:Barlow,sans-serif;padding:10px;margin-top:4px">Cancel</button>
+  </div>
+</div>
+
+<!-- DEBT SIMULATOR SCREEN -->
+<div id="p-sim" class="pg">
+  <div class="fhdr">
+    <button class="bk" onclick="go('p-res')">←</button>
+    <span style="font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:800">Debt Payoff Simulator</span>
+  </div>
+  <div class="fbody" style="background:#1a1a2e;min-height:calc(100vh - 62px)">
+    <div style="font-size:.77rem;color:rgba(255,255,255,.42);margin-bottom:14px;line-height:1.5">Add your debts below. We find the best payoff order to eliminate the biggest monthly payments first, maximizing your DTI reduction per dollar spent.</div>
+    <div class="sim-top">
+      <div class="sst"><div class="sl">Current DTI</div><div class="sv sv-bad" id="sim-dti2">—</div></div>
+      <div class="sst" style="text-align:right"><div class="sl">Monthly Income</div><div class="sv" style="color:#fff;font-size:1.1rem" id="sim-inc2">—</div></div>
+    </div>
+    <div style="font-size:.69rem;color:rgba(255,255,255,.36);text-transform:uppercase;letter-spacing:.06em;margin-bottom:9px">Your Monthly Debts</div>
+    <div id="debt-list"></div>
+    <button class="add-btn" onclick="addDebt()">+ Add Debt Account</button>
+    <div class="fl" style="color:#bbb;margin-top:4px">Available Payoff Funds</div>
+    <div class="iw"><span class="ipx" style="color:#ed2427">$</span>
+      <input type="number" class="px" id="pfunds" placeholder="5000" oninput="runSim()"
+        style="background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);color:#fff;box-shadow:none">
+    </div>
+    <div class="sim-res" id="sim-res">
+      <div style="font-size:.69rem;color:rgba(255,255,255,.36);text-transform:uppercase;letter-spacing:.06em;margin-bottom:9px">Recommended Payoff Order</div>
+      <div id="plist"></div>
+      <div class="dti-boxes">
+        <div class="dtib dtib-o"><div class="dtibl">Current DTI</div><div class="dtibv" style="color:#f87171" id="old-dti">—</div></div>
+        <div class="dtib dtib-n"><div class="dtibl">New DTI</div><div class="dtibv" style="color:#4ade80" id="new-dti">—</div></div>
+        <div class="dtib dtib-o"><div class="dtibl">Pmt Removed</div><div class="dtibv" style="color:#fff;font-size:1.3rem" id="pmt-saved">—</div></div>
+        <div class="dtib dtib-o"><div class="dtibl">Funds Left</div><div class="dtibv" style="color:#fff;font-size:1.3rem" id="funds-left">—</div></div>
+      </div>
+      <div class="simmsg" id="simmsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- H°METRY SCREEN -->
+<div id="p-match" class="pg">
+  <div class="fhdr">
+    <button class="bk" onclick="go('p-res')">←</button>
+    <span style="font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:800">H°METRY</span>
+  </div>
+  <div class="fbody" style="padding-top:20px">
+    <div class="eye">Property Search</div>
+    <div class="qh" style="margin-bottom:6px">Find your home match</div>
+    <div class="qs">Start typing any U.S. address to see suggestions, or type the full address and tap Search.</div>
+
+    <!-- Address input -->
+    <div id="geocoder-container" style="margin-bottom:16px"></div>
+    <input type="hidden" id="addrIn" value="">
+
+    <div id="m-load" style="display:none;text-align:center;padding:16px;color:#aaa;font-size:.85rem">
+      <span class="spinr"></span>Looking up property…
+    </div>
+    <div id="pcard" style="display:none;background:#fff;border:2px solid #e8e8e8;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 2px 10px rgba(0,0,0,.06)">
+      <div id="p-addr" style="font-size:.76rem;color:#aaa;margin-bottom:3px">—</div>
+      <div id="p-val" style="font-family:'Barlow Condensed',sans-serif;font-size:1.9rem;font-weight:800;color:#111">—</div>
+      <div style="font-size:.67rem;color:#ccc;margin-top:3px">Estimated value — use the field below to override with the real listing price</div>
+    </div>
+
+    <!-- Price override -->
+    <div id="price-override" style="display:none;margin-bottom:16px">
+      <div style="font-size:.71rem;font-weight:700;color:#666;letter-spacing:.04em;text-transform:uppercase;margin-bottom:7px">Override with actual listing price</div>
+      <div style="position:relative">
+        <span style="position:absolute;left:13px;top:50%;transform:translateY(-50%);color:#ed2427;font-weight:700;pointer-events:none">$</span>
+        <input type="number" id="manual-price" placeholder="e.g. 425000"
+          oninput="applyManualPrice(this.value)"
+          style="width:100%;background:#fff;border:2px solid #e8e8e8;border-radius:12px;padding:13px 13px 13px 30px;font-family:Barlow,sans-serif;font-size:.95rem;font-weight:600;outline:none;color:#111;-moz-appearance:textfield;box-shadow:0 1px 4px rgba(0,0,0,.04)">
+      </div>
+    </div>
+
+    <!-- Property score card -->
+    <div id="prop-score" style="display:none;background:#1a1a2e;border-radius:14px;padding:16px;margin-bottom:14px">
+      <div style="font-size:.67rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:10px">Readiness Score for This Home</div>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
+        <div style="flex:1">
+          <div id="ps-score-num" style="font-family:'Barlow Condensed',sans-serif;font-size:3.2rem;font-weight:800;line-height:1">—</div>
+          <div id="ps-tier-lbl" style="font-size:.8rem;font-weight:700;margin-top:2px">—</div>
+        </div>
+        <div style="background:rgba(255,255,255,.07);border-radius:10px;padding:10px 14px;text-align:center;min-width:85px">
+          <div id="ps-delta" style="font-family:'Barlow Condensed',sans-serif;font-size:1.5rem;font-weight:800;line-height:1">—</div>
+          <div id="ps-delta-lbl" style="font-size:.63rem;color:#bbb;margin-top:2px;font-weight:600">vs your base</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px">
+        <div style="background:rgba(255,255,255,.06);border-radius:8px;padding:8px 10px">
+          <div style="font-size:.59rem;color:rgba(255,255,255,.38);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">New DTI</div>
+          <div id="ps-dti" style="font-size:.87rem;font-weight:700;color:#fff">—</div>
+        </div>
+        <div style="background:rgba(255,255,255,.06);border-radius:8px;padding:8px 10px">
+          <div style="font-size:.59rem;color:rgba(255,255,255,.38);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">Front-End</div>
+          <div id="ps-fe" style="font-size:.87rem;font-weight:700;color:#fff">—</div>
+        </div>
+        <div style="background:rgba(255,255,255,.06);border-radius:8px;padding:8px 10px">
+          <div style="font-size:.59rem;color:rgba(255,255,255,.38);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">Est. Payment</div>
+          <div id="ps-pmt" style="font-size:.87rem;font-weight:700;color:#fff">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loan cards -->
+    <div id="tap-hint" style="display:none;font-size:.71rem;color:#bbb;margin-bottom:10px;text-align:center">Tap any card to see full payment details</div>
+    <div id="lcards" style="display:none;flex-direction:column;gap:12px"></div>
+
+    <!-- Improvement tips -->
+    <div id="impr" style="display:none;background:#fff;border:2px solid rgba(237,36,39,.2);border-radius:14px;padding:16px;margin-top:14px">
+      <div style="font-size:.83rem;font-weight:700;color:#ed2427;margin-bottom:9px">⚡ What would improve your match?</div>
+      <div id="impr-i"></div>
+    </div>
+
+    <!-- LO card -->
+    <div id="locard" style="display:none;background:#1a1a2e;border-radius:16px;padding:20px;margin-top:14px">
+      <div style="font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#ed2427;margin-bottom:7px">Ready to take the next step?</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.5rem;font-weight:800;color:#111;margin-bottom:4px">Get Pre-Qualified Today</div>
+      <div style="font-size:.77rem;color:rgba(255,255,255,.45);line-height:1.5;margin-bottom:14px">A licensed loan officer is ready to review your file and get you pre-approved — typically within 24 hours.</div>
+      <div style="display:flex;align-items:center;gap:12px;padding:13px;background:rgba(255,255,255,.06);border-radius:11px;margin-bottom:13px">
+        <div style="width:48px;height:48px;border-radius:50%;background:rgba(237,36,39,.2);border:2px solid rgba(237,36,39,.4);display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0">👤</div>
+        <div>
+          <div id="lo-nm" style="font-size:.93rem;font-weight:700;color:#111;margin-bottom:1px">Your Local Loan Officer</div>
+          <div id="lo-tl" style="font-size:.72rem;color:rgba(255,255,255,.45);margin-bottom:2px">Mortgage Specialist</div>
+          <div id="lo-nmls" style="font-size:.65rem;color:rgba(255,255,255,.3)">NMLS #000000</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+        <button id="lo-apply" style="padding:13px;border-radius:10px;background:linear-gradient(135deg,#ed2427,#c41f22);color:#fff;border:none;font-family:Barlow,sans-serif;font-size:.83rem;font-weight:700;cursor:pointer">Apply Now →</button>
+        <button id="lo-call" style="padding:13px;border-radius:10px;background:rgba(255,255,255,.1);color:#fff;border:1.5px solid rgba(255,255,255,.15);font-family:Barlow,sans-serif;font-size:.83rem;font-weight:700;cursor:pointer">📞 Call Me</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══ SIGN UP SCREEN ═══ -->
+<div id="p-signup" class="pg" data-back="p-res">
+  <div class="fhdr">
+    <button class="bk" onclick="go(document.getElementById('p-signup').getAttribute('data-back')||'p-res')">←</button>
+    <span style="font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:800">Create Account</span>
+  </div>
+  <div class="fbody" style="background:#fff">
+    <!-- Already signed in state -->
+    <div id="already-signedin" style="display:none;text-align:center;padding:20px 0">
+      <div style="font-size:2.2rem;margin-bottom:12px">✅</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.4rem;font-weight:800;color:#111;margin-bottom:8px">You're already signed in!</div>
+      <div style="font-size:.83rem;color:#888;margin-bottom:20px">Your results are being saved automatically.</div>
+      <button onclick="saveAfterScore();go('p-res')" class="cta">Save My Score &amp; Continue →</button>
+    </div>
+    <!-- Sign up form -->
+    <div id="signup-form-wrap">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:2.2rem;margin-bottom:10px">💾</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.6rem;font-weight:800;color:#111;margin-bottom:6px">Save Your Results</div>
+      <div style="font-size:.83rem;color:#888;line-height:1.55">Create a free account to save your score and come back anytime without re-entering your information.</div>
+    </div>
+    <button onclick="signInGoogle()" style="width:100%;padding:14px;border-radius:12px;border:2px solid #e8e8e8;background:#fff;color:#111;font-family:Barlow,sans-serif;font-size:.92rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.05)">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Continue with Google
+    </button>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <div style="flex:1;height:1px;background:#e8e8e8"></div>
+      <span style="font-size:.78rem;color:#bbb;font-weight:600">OR</span>
+      <div style="flex:1;height:1px;background:#e8e8e8"></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+      <div>
+        <div class="fl">First Name</div>
+        <input id="su-name" type="text" placeholder="e.g. Sarah" style="width:100%;padding:13px 15px;border-radius:12px;border:2px solid #e8e8e8;font-family:Barlow,sans-serif;font-size:.97rem;outline:none" onfocus="this.style.borderColor='#ed2427'" onblur="this.style.borderColor='#e8e8e8'">
+      </div>
+      <div>
+        <div class="fl">Email Address</div>
+        <input id="su-email" type="email" placeholder="you@example.com" style="width:100%;padding:13px 15px;border-radius:12px;border:2px solid #e8e8e8;font-family:Barlow,sans-serif;font-size:.97rem;outline:none" onfocus="this.style.borderColor='#ed2427'" onblur="this.style.borderColor='#e8e8e8'">
+      </div>
+      <div>
+        <div class="fl">Password</div>
+        <input id="su-pass" type="password" placeholder="6+ characters" style="width:100%;padding:13px 15px;border-radius:12px;border:2px solid #e8e8e8;font-family:Barlow,sans-serif;font-size:.97rem;outline:none" onfocus="this.style.borderColor='#ed2427'" onblur="this.style.borderColor='#e8e8e8'">
+      </div>
+      <div id="su-error" style="display:none;font-size:.8rem;color:#ed2427;padding:10px;background:#fff5f5;border-radius:9px;border:1.5px solid rgba(237,36,39,.2)"></div>
+    </div>
+    <button onclick="doSignUp()" id="su-btn" class="cta" style="margin-bottom:14px">Create Free Account →</button>
+    <div style="text-align:center">
+      <span style="font-size:.8rem;color:#aaa">Already have an account? </span>
+      <button onclick="go('p-signin')" style="background:none;border:none;color:#ed2427;font-size:.8rem;font-weight:700;cursor:pointer;font-family:Barlow,sans-serif">Sign In</button>
+    </div>
+    <button onclick="go(document.getElementById('p-signup').getAttribute('data-back')||'p-res')" style="width:100%;background:none;border:none;color:#ccc;font-size:.79rem;cursor:pointer;font-family:Barlow,sans-serif;padding:12px;margin-top:4px;text-align:center">No thanks, continue without saving</button>
+    </div><!-- end signup-form-wrap -->
+  </div>
+</div>
+
+<!-- ═══ SIGN IN SCREEN ═══ -->
+<div id="p-signin" class="pg">
+  <div class="fhdr">
+    <button class="bk" onclick="go('p-signup')">←</button>
+    <span style="font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:800">Sign In</span>
+  </div>
+  <div class="fbody" style="background:#fff">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:2.2rem;margin-bottom:10px">👋</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.6rem;font-weight:800;color:#111;margin-bottom:6px">Welcome Back</div>
+      <div style="font-size:.83rem;color:#888;line-height:1.55">Sign in to restore your saved score and profile.</div>
+    </div>
+    <button onclick="signInGoogle()" style="width:100%;padding:14px;border-radius:12px;border:2px solid #e8e8e8;background:#fff;color:#111;font-family:Barlow,sans-serif;font-size:.92rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.05)">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Sign in with Google
+    </button>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <div style="flex:1;height:1px;background:#e8e8e8"></div>
+      <span style="font-size:.78rem;color:#bbb;font-weight:600">OR</span>
+      <div style="flex:1;height:1px;background:#e8e8e8"></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+      <div>
+        <div class="fl">Email Address</div>
+        <input id="si-email" type="email" placeholder="you@example.com" style="width:100%;padding:13px 15px;border-radius:12px;border:2px solid #e8e8e8;font-family:Barlow,sans-serif;font-size:.97rem;outline:none" onfocus="this.style.borderColor='#ed2427'" onblur="this.style.borderColor='#e8e8e8'" onkeydown="if(event.key==='Enter')doSignIn()">
+      </div>
+      <div>
+        <div class="fl">Password</div>
+        <input id="si-pass" type="password" placeholder="Your password" style="width:100%;padding:13px 15px;border-radius:12px;border:2px solid #e8e8e8;font-family:Barlow,sans-serif;font-size:.97rem;outline:none" onfocus="this.style.borderColor='#ed2427'" onblur="this.style.borderColor='#e8e8e8'" onkeydown="if(event.key==='Enter')doSignIn()">
+      </div>
+      <div id="si-error" style="display:none;font-size:.8rem;color:#ed2427;padding:10px;background:#fff5f5;border-radius:9px;border:1.5px solid rgba(237,36,39,.2)"></div>
+    </div>
+    <button onclick="doSignIn()" id="si-btn" class="cta" style="margin-bottom:14px">Sign In →</button>
+    <div style="text-align:center">
+      <span style="font-size:.8rem;color:#aaa">No account yet? </span>
+      <button onclick="go('p-signup')" style="background:none;border:none;color:#ed2427;font-size:.8rem;font-weight:700;cursor:pointer;font-family:Barlow,sans-serif">Create one free</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══ EDIT PROFILE PANEL ═══ -->
+<div class="edit-panel" id="edit-panel" onclick="closeEditIfBg(event)">
+  <div class="edit-sheet" id="edit-sheet">
+    <div class="edit-sheet-hdr">
+      <h2>✏️ Edit My Profile</h2>
+      <button class="edit-close" onclick="closeEdit()">✕</button>
+    </div>
+
+    <!-- Live score preview -->
+    <div class="edit-live-score">
+      <div>
+        <div class="els-label">Updated Score</div>
+        <div class="els-score" id="els-score">—</div>
+        <div class="els-tier" id="els-tier">—</div>
+      </div>
+      <div class="els-change">
+        <div class="els-delta same" id="els-delta">—</div>
+        <div class="els-delta-lbl" id="els-delta-lbl">from current</div>
+      </div>
+    </div>
+
+    <!-- Credit -->
+    <div class="edit-section">
+      <div class="edit-sec-title">Credit Score</div>
+      <div class="edit-row full">
+        <div class="edit-field">
+          <div class="edit-lbl">FICO Score (300–850)</div>
+          <div class="edit-iw">
+            <input type="number" id="e-fico" min="300" max="850" placeholder="720" oninput="editRecalc()">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Income -->
+    <div class="edit-section">
+      <div class="edit-sec-title">Income</div>
+      <div class="edit-row full">
+        <div class="edit-field">
+          <div class="edit-lbl">Gross Monthly Income</div>
+          <div class="edit-iw"><span class="edit-ipx">$</span><input type="number" class="has-pfx" id="e-income" placeholder="6500" oninput="editRecalc()"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Debts -->
+    <div class="edit-section">
+      <div class="edit-sec-title">Monthly Debts</div>
+      <div class="edit-row full">
+        <div class="edit-field">
+          <div class="edit-lbl">Total Monthly Debt Payments</div>
+          <div class="edit-iw"><span class="edit-ipx">$</span><input type="number" class="has-pfx" id="e-debts" placeholder="750" oninput="editRecalc()"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Home & Rate -->
+    <div class="edit-section">
+      <div class="edit-sec-title">Target Home</div>
+      <div class="edit-row">
+        <div class="edit-field">
+          <div class="edit-lbl">Purchase Price</div>
+          <div class="edit-iw"><span class="edit-ipx">$</span><input type="number" class="has-pfx" id="e-price" placeholder="350000" oninput="editRecalc()"></div>
+        </div>
+        <div class="edit-field">
+          <div class="edit-lbl">Interest Rate</div>
+          <div class="edit-iw"><input type="number" class="has-sfx" id="e-rate" placeholder="6.5" oninput="editRecalc()"><span class="edit-isx">%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Assets -->
+    <div class="edit-section">
+      <div class="edit-sec-title">Assets</div>
+      <div class="edit-row">
+        <div class="edit-field">
+          <div class="edit-lbl">Total Assets</div>
+          <div class="edit-iw"><span class="edit-ipx">$</span><input type="number" class="has-pfx" id="e-assets" placeholder="25000" oninput="editRecalc()"></div>
+        </div>
+        <div class="edit-field">
+          <div class="edit-lbl">Down Payment</div>
+          <div class="edit-iw"><span class="edit-ipx">$</span><input type="number" class="has-pfx" id="e-down" placeholder="10500" oninput="editRecalc()"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VA -->
+    <div class="edit-section">
+      <div class="edit-sec-title">VA Eligibility</div>
+      <div class="edit-row full">
+        <div class="edit-field">
+          <div class="edit-lbl">Veteran / Active-Duty?</div>
+          <select class="edit-select" id="e-va" onchange="editRecalc()">
+            <option value="no">No — Civilian</option>
+            <option value="yes">Yes — Veteran / Active Duty</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <button class="edit-save-btn" onclick="saveEdit()">Save &amp; Update My Score ✓</button>
+  </div>
+</div>
+
+<script>
+var S={name:'',creditScore:0,creditRange:'',empType:'',income:0,debts:0,homePrice:0,rate:0,assets:0,down:0,isVA:false,score:0,dti:0,frontEnd:0,housingPmt:0,calcTerm:30};
+var LO={'default':{name:'Your Local Loan Officer',title:'Mortgage Specialist',nmls:'NMLS #000000',phone:'5550000000',url:'#'},'30301':{name:'Pierce Johnson',title:'Senior Loan Officer · loanDepot',nmls:'NMLS #174457',phone:'4045551234',url:'https://loandepot.com'}};
+
+function go(id){
+  var all=document.querySelectorAll('.pg');
+  for(var i=0;i<all.length;i++) all[i].classList.remove('on');
+  var el=document.getElementById(id);
+  if(el){el.classList.add('on');window.scrollTo(0,0);}
+  // Init Mapbox geocoder when navigating to match screen
+  if(id==='p-match'){
+    setTimeout(function(){
+      var container=document.getElementById('geocoder-container');
+      if(container&&!container.querySelector('.mapboxgl-ctrl-geocoder')){
+        if(typeof initMapboxGeocoder==='function') initMapboxGeocoder();
+      }
+    },100);
+  }
+}
+function fmt(n){return '$'+Math.round(n).toLocaleString('en-US');}
+function fmtM(n){return '$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function pmt(p,r,n){if(!p||!r)return 0;var mr=(r/100)/12;if(!mr)return p/n;return p*(mr*Math.pow(1+mr,n))/(Math.pow(1+mr,n)-1);}
+function ficoLabel(s){if(s>=760)return'Excellent';if(s>=720)return'Very Good';if(s>=700)return'Good';if(s>=680)return'Good';if(s>=660)return'Fair';if(s>=640)return'Fair';if(s>=620)return'Below Avg';if(s>=580)return'Poor';return'Rebuilding';}
+function ficoColor(s){if(s>=720)return'#16a34a';if(s>=660)return'#d97706';return'#dc2626';}
+function ficoRange(s){if(s>=760)return'760+';if(s>=740)return'740-759';if(s>=720)return'720-739';if(s>=700)return'700-719';if(s>=680)return'680-699';if(s>=660)return'660-679';if(s>=640)return'640-659';if(s>=620)return'620-639';if(s>=580)return'580-619';return'below-580';}
+function creditSS(r){return{'760+':100,'740-759':95,'720-739':90,'700-719':85,'680-699':78,'660-679':70,'640-659':62,'620-639':55,'580-619':40,'below-580':20}[r]||0;}
+function dtiSS(d){if(!S.isVA&&d>57)return 0;if(d<=30)return 100;if(d<=36)return 90;if(d<=43)return 78;if(d<=49)return 45;if(d<=55)return 20;if(d<=57)return 10;return 10;}
+function assetSS(){var p=S.homePrice,d=S.down,cl=p*0.025,mp=pmt(p-d,S.rate,360),r6=mp*6,r3=mp*3,req=d+cl,a=S.assets;if(a>=req+r6)return 100;if(a>=req+r3)return 90;if(a>=req+mp)return 80;if(a>=req*.9)return 65;if(a>0)return 45;return 20;}
+function feSS(f){if(f<=10)return 100;if(f<=19)return 95;if(f<=26)return 85;if(f<=35)return 70;if(f<=40)return 35;if(f<=43)return 7;return 0;}
+function tierInfo(sc){if(sc>=80)return{label:'Mortgage Ready',color:'#4ade80'};if(sc>=65)return{label:'Almost Ready',color:'#fbbf24'};if(sc>=50)return{label:'Building',color:'#60a5fa'};return{label:'Needs Work',color:'#f87171'};}
+
+// Calc
+function selTerm(el,t){document.querySelectorAll('#p-calc .oc').forEach(function(b){b.classList.remove('sel');});el.classList.add('sel');S.calcTerm=t;}
+function runCalc(){var p=parseFloat(document.getElementById('cp').value)||0,d=parseFloat(document.getElementById('cd').value)||0,r=parseFloat(document.getElementById('cr').value)||0,l=p-d;if(!l||!r)return;var pay=pmt(l,r,S.calcTerm*12);document.getElementById('crp').textContent=fmtM(pay)+'/mo';document.getElementById('crl').textContent=fmt(l);document.getElementById('crr').textContent=r.toFixed(3)+'%';document.getElementById('crt').textContent=S.calcTerm+' yrs';document.getElementById('cres').classList.add('on');}
+
+// Credit
+function showCreditEnter(){document.getElementById('ct1').classList.add('sel');document.getElementById('ct2').classList.remove('sel');document.getElementById('cs-enter').classList.add('on');document.getElementById('cs-range').classList.remove('on');document.getElementById('bq2').disabled=!(S.creditScore>=300&&S.creditScore<=850);}
+function showCreditRange(){document.getElementById('ct2').classList.add('sel');document.getElementById('ct1').classList.remove('sel');document.getElementById('cs-range').classList.add('on');document.getElementById('cs-enter').classList.remove('on');document.getElementById('bq2').disabled=!S.creditRange;}
+function ficoInput(v){var n=parseInt(v)||0;S.creditScore=n;S.creditRange=ficoRange(n);var lbl=document.getElementById('fico-lbl');if(n>=300&&n<=850){lbl.textContent=ficoLabel(n);lbl.style.color=ficoColor(n);}else{lbl.textContent='';}document.getElementById('bq2').disabled=!(n>=300&&n<=850);}
+function selRange(el,r){document.querySelectorAll('#cs-range .oc').forEach(function(b){b.classList.remove('sel');});el.classList.add('sel');S.creditRange=r;S.creditScore=0;document.getElementById('bq2').disabled=false;}
+
+// Employment
+function selEmp(el,t){document.querySelectorAll('#p-q3 .og .oc').forEach(function(b){b.classList.remove('sel');});el.classList.add('sel');S.empType=t;document.querySelectorAll('.sebox').forEach(function(b){b.classList.remove('on');});var box=document.getElementById('se-'+t);if(box)box.classList.add('on');document.getElementById('bq3').disabled=true;S.income=0;}
+function setIncome(v){S.income=parseFloat(v)||0;document.getElementById('bq3').disabled=S.income<=0;}
+function calcSC(){var g1=parseFloat(document.getElementById('sg1').value)||0,e1=parseFloat(document.getElementById('se1').value)||0,g2=parseFloat(document.getElementById('sg2').value)||0,e2=parseFloat(document.getElementById('se2').value)||0,mo=((g1-e1)+(g2-e2))/2/12;S.income=mo;if(mo>0){document.getElementById('scr').classList.add('on');document.getElementById('scm').textContent=fmtM(mo);}document.getElementById('bq3').disabled=mo<=0;}
+function calcScorp(){var w1=parseFloat(document.getElementById('sw1').value)||0,d1=parseFloat(document.getElementById('sd1').value)||0,w2=parseFloat(document.getElementById('sw2').value)||0,d2=parseFloat(document.getElementById('sd2').value)||0,mo=((w1+d1)+(w2+d2))/2/12;S.income=mo;if(mo>0){document.getElementById('scr2').classList.add('on');document.getElementById('scm2').textContent=fmtM(mo);}document.getElementById('bq3').disabled=mo<=0;}
+function calcPs(){var i1=parseFloat(document.getElementById('ps1').value)||0,i2=parseFloat(document.getElementById('ps2').value)||0,mo=(i1+i2)/2/12;S.income=mo;if(mo>0){document.getElementById('scr3').classList.add('on');document.getElementById('scm3').textContent=fmtM(mo);}document.getElementById('bq3').disabled=mo<=0;}
+function chk5(){document.getElementById('bq5').disabled=!document.getElementById('q-price').value||!document.getElementById('q-rate').value;}
+function chk6(){var a=document.getElementById('q-assets').value;var d=document.getElementById('q-down').value;document.getElementById('bq6').disabled=!a||!d||parseFloat(d)<=0;}
+
+// Down Payment Presets
+function updateDpPresets(){
+  var price=parseFloat(document.getElementById('q-price').value)||0;
+  [3.5,5,10,20].forEach(function(pct){
+    var el=document.getElementById('dp-'+pct);
+    if(el)el.textContent=price>0?fmt(price*pct/100):'—';
+  });
+  // Update min down label
+  var minPct=S.creditScore>=620||S.creditRange==='760+'||S.creditRange==='740-759'||S.creditRange==='720-739'||S.creditRange==='700-719'||S.creditRange==='680-699'||S.creditRange==='660-679'||S.creditRange==='640-659'||S.creditRange==='620-639'?3.5:10;
+  var minEl=document.getElementById('dp-min');
+  if(minEl)minEl.textContent=price>0?(minPct+'% = '+fmt(price*minPct/100)):'Based on credit';
+}
+
+function selDpPreset(el,pct){
+  document.querySelectorAll('.dp-preset').forEach(function(b){b.classList.remove('sel');});
+  el.classList.add('sel');
+  document.getElementById('dp-custom-wrap').classList.remove('on');
+  var price=parseFloat(document.getElementById('q-price').value)||S.homePrice||0;
+  var amt=0;
+  if(pct==='min'){
+    var minPct=S.creditScore>=620||['760+','740-759','720-739','700-719','680-699','660-679','640-659','620-639'].indexOf(S.creditRange)>=0?3.5:10;
+    amt=price*minPct/100;
+  } else if(pct!=='custom'){
+    amt=price*parseFloat(pct)/100;
+  }
+  if(amt>0){document.getElementById('q-down').value=Math.round(amt);chk6();}
+}
+function selDpCustom(el){
+  document.querySelectorAll('.dp-preset').forEach(function(b){b.classList.remove('sel');});
+  el.classList.add('sel');
+  document.getElementById('dp-custom-wrap').classList.add('on');
+  document.getElementById('q-down').value='';chk6();
+}
+function dpCustomInput(v){document.getElementById('q-down').value=v;chk6();}
+
+// Score Engine
+
+// ── GAUGE ANIMATION ──
+function drawGauge() {
+  if (!S || !S.score) return;
+  var ti = tierInfo(S.score);
+  setTimeout(function() {
+    var offset = 440 - (440 * Math.min(S.score, 100) / 100);
+    var arc = document.getElementById('g-arc');
+    var glow = document.getElementById('g-glow');
+    var numEl = document.getElementById('g-num');
+    var tierEl = document.getElementById('g-tier');
+    if (arc) arc.style.strokeDashoffset = offset;
+    if (glow) glow.style.strokeDashoffset = offset;
+    if (numEl) numEl.setAttribute('fill', ti.color);
+    if (tierEl) { tierEl.textContent = ti.label; tierEl.setAttribute('fill', ti.color); }
+
+    // Count up animation
+    if (numEl) {
+      var t0 = null, end = S.score;
+      function tick(ts) {
+        if (!t0) t0 = ts;
+        var pr = Math.min((ts - t0) / 1300, 1);
+        var e = 1 - Math.pow(1 - pr, 3);
+        numEl.textContent = Math.round(e * end);
+        if (pr < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    }
+
+    // Mini gauge on dashboard
+    var mg = document.getElementById('mini-arc');
+    if (mg) {
+      var mOff = 188 - (188 * Math.min(S.score, 100) / 100);
+      mg.style.strokeDashoffset = mOff;
+      mg.style.stroke = ti.color;
+    }
+    var mgs = document.getElementById('mini-score');
+    if (mgs) mgs.textContent = S.score;
+    var mgt = document.getElementById('mini-tier');
+    if (mgt) { mgt.textContent = ti.label; mgt.style.color = ti.color; }
+  }, 200);
+}
+
+// ── TOAST NOTIFICATION ──
+function showToast(msg, isError) {
+  var t = document.getElementById('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:12px 22px;border-radius:12px;color:#fff;font-family:Barlow,sans-serif;font-size:.88rem;font-weight:600;z-index:9999;max-width:320px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.2);transition:opacity .3s';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.background = isError ? '#c41f22' : '#1a1a2e';
+  t.style.opacity = '1';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(function() { t.style.opacity = '0'; }, 3000);
+}
+
+// ── SAVE AFTER SCORE ──
+function saveAfterScore() {
+  if (!window.currentUser) { go('p-signup'); return; }
+  saveProfile(window.currentUser.uid).then(function() {
+    showToast('Score saved to your account!');
+  }).catch(function(e) {
+    showToast('Save failed: ' + e.message, true);
+  });
+}
+
+// ── SIGN OUT ──
+function doSignOut() {
+  var authInst = window.fbAuth || (typeof firebase !== 'undefined' ? firebase.auth() : null);
+  if (!authInst) { go('p0'); return; }
+  authInst.signOut()
+    .then(function() {
+      window.currentUser = null;
+      window.S = {name:'',creditScore:0,creditRange:'',income:0,debts:0,
+                  homePrice:0,rate:0,assets:0,down:0,isVA:false,
+                  score:0,dti:0,frontEnd:0,housingPmt:0};
+      showToast('Signed out.');
+      go('p0');
+    })
+    .catch(function() { go('p0'); });
+}
+
+
+function calcScore(){
+  var mp=pmt(S.homePrice-S.down,S.rate,360),tax=S.homePrice*.014/12,ins=S.homePrice*.005/12;
+  S.housingPmt=mp+tax+ins;var total=S.housingPmt+S.debts;
+  S.dti=S.income>0?(total/S.income)*100:100;
+  S.frontEnd=S.income>0?(S.housingPmt/S.income)*100:100;
+  var c=creditSS(S.creditRange),d=dtiSS(S.dti),a=assetSS(),f=feSS(S.frontEnd);
+  S.score=Math.round(c*.35+d*.30+a*.20+f*.15);
+  var ti=tierInfo(S.score);
+  document.getElementById('rg').textContent='Hello, '+(S.name||'there');
+  document.getElementById('sd-dti').textContent=S.dti.toFixed(1)+'%';
+  document.getElementById('sd-fe').textContent=S.frontEnd.toFixed(1)+'%';
+  document.getElementById('sd-inc').textContent=fmtM(S.income);
+  document.getElementById('sd-hpmt').textContent=fmtM(S.housingPmt);
+  go('p-res');
+  drawGauge();
+}
+
+// ── GAUGE ANIMATION ──
+function drawGauge() {
+  if (!S || !S.score) return;
+  var ti = tierInfo(S.score);
+  setTimeout(function() {
+    var offset = 440 - (440 * Math.min(S.score, 100) / 100);
+    var arc = document.getElementById('g-arc');
+    var glow = document.getElementById('g-glow');
+    var numEl = document.getElementById('g-num');
+    var tierEl = document.getElementById('g-tier');
+    if (arc) arc.style.strokeDashoffset = offset;
+    if (glow) glow.style.strokeDashoffset = offset;
+    if (numEl) numEl.setAttribute('fill', ti.color);
+    if (tierEl) { tierEl.textContent = ti.label; tierEl.setAttribute('fill', ti.color); }
+    if (numEl) {
+      var t0 = null, end = S.score;
+      function tick(ts) {
+        if (!t0) t0 = ts;
+        var pr = Math.min((ts - t0) / 1300, 1);
+        var e = 1 - Math.pow(1 - pr, 3);
+        numEl.textContent = Math.round(e * end);
+        if (pr < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    }
+    var mg = document.getElementById('mini-arc');
+    if (mg) { mg.style.strokeDashoffset = 188-(188*Math.min(S.score,100)/100); mg.style.stroke = ti.color; }
+    var mgs = document.getElementById('mini-score');
+    if (mgs) mgs.textContent = S.score;
+    var mgt = document.getElementById('mini-tier');
+    if (mgt) { mgt.textContent = ti.label; mgt.style.color = ti.color; }
+  }, 250);
+}
+
+function calcScore(){
+  var mp=pmt(S.homePrice-S.down,S.rate,360),tax=S.homePrice*.014/12,ins=S.homePrice*.005/12;
+  S.housingPmt=mp+tax+ins;var total=S.housingPmt+S.debts;
+  S.dti=S.income>0?(total/S.income)*100:100;
+  S.frontEnd=S.income>0?(S.housingPmt/S.income)*100:100;
+  var c=creditSS(S.creditRange),d=dtiSS(S.dti),a=assetSS(),f=feSS(S.frontEnd);
+  S.score=Math.round(c*.35+d*.30+a*.20+f*.15);
+  var ti=tierInfo(S.score);
+  document.getElementById('rg').textContent='Hello, '+(S.name||'there');
+  document.getElementById('sd-dti').textContent=S.dti.toFixed(1)+'%';
+  document.getElementById('sd-fe').textContent=S.frontEnd.toFixed(1)+'%';
+  document.getElementById('sd-inc').textContent=fmtM(S.income);
+  document.getElementById('sd-hpmt').textContent=fmtM(S.housingPmt);
+  go('p-res');
+  setTimeout(function(){
+    var offset=440-(440*Math.min(S.score,100)/100);
+    document.getElementById('g-arc').style.strokeDashoffset=offset;
+    document.getElementById('g-glow').style.strokeDashoffset=offset;
+    var el=document.getElementById('g-num');el.setAttribute('fill',ti.color);
+    var t0=null,end=S.score;
+    function tick(ts){if(!t0)t0=ts;var pr=Math.min((ts-t0)/1300,1),e=1-Math.pow(1-pr,3);el.textContent=Math.round(e*end);if(pr<1)requestAnimationFrame(tick);}
+    requestAnimationFrame(tick);
+    var tEl=document.getElementById('g-tier');tEl.textContent=ti.label;tEl.setAttribute('fill',ti.color);
+    // g-out removed in redesign
+    setTimeout(function(){
+      var el1=document.getElementById('bb1');var el2=document.getElementById('bb2');
+      var el3=document.getElementById('bb3');var el4=document.getElementById('bb4');
+      if(el1){el1.style.width=c+'%';document.getElementById('bv1').textContent=c+'/100';}
+      if(el2){el2.style.width=d+'%';document.getElementById('bv2').textContent=d+'/100';}
+      if(el3){el3.style.width=a+'%';document.getElementById('bv3').textContent=a+'/100';}
+      if(el4){el4.style.width=f+'%';document.getElementById('bv4').textContent=f+'/100';}
+    },500);
+  },120);
+  // Show/hide debt sim button
+  var simBtn=document.getElementById('btn-sim-action');
+  if(simBtn){
+    if(S.dti>40){
+      simBtn.style.display='flex';
+      var s2=document.getElementById('sim-dti2');var i2=document.getElementById('sim-inc2');
+      if(s2)s2.textContent=S.dti.toFixed(1)+'%';
+      if(i2)i2.textContent=fmtM(S.income);
+      if(document.getElementById('old-dti'))document.getElementById('old-dti').textContent=S.dti.toFixed(1)+'%';
+    } else { simBtn.style.display='none'; }
+  }
+}
+
+function openSim(){ go('p-sim'); if(!document.querySelector('.debt-entry')) addDebt(); }
+
+function toDash(){
+  var ti=tierInfo(S.score);
+  var greet=document.getElementById('d-greet');
+  var mgs=document.getElementById('mgs');
+  var mgt=document.getElementById('mgt');
+  var mg=document.getElementById('mg');
+  if(greet) greet.textContent='Hello, '+(S.name||'there');
+  if(mg){ mg.style.stroke='rgba(255,255,255,.9)';
+    setTimeout(function(){
+      mg.style.strokeDashoffset=201-(201*(Math.min(S.score,100)/100));
+      if(mgs) mgs.textContent=S.score;
+      if(mgt) mgt.textContent=ti.label;
+    },200);
+  }
+  go('p-dash');
+}
+
+// Simulator
+var did=0;
+function addDebt(nm,bl,pm){
+  did++;var id=did;var el=document.createElement('div');el.className='debt-entry';el.id='de'+id;
+  el.innerHTML='<button class="rmv" onclick="rmDebt('+id+')">✕</button>'
+    +'<div class="iw" style="margin-bottom:0"><input type="text" id="dn'+id+'" placeholder="e.g. Car Loan, Visa" value="'+(nm||'')+'" oninput="runSim()" style="background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);color:#fff;font-size:.9rem;box-shadow:none"></div>'
+    +'<div class="dgrid"><div><div class="dfl">Balance</div><div class="iw"><span class="ipx" style="color:#ed2427">$</span><input type="number" class="px" id="db'+id+'" placeholder="8500" value="'+(bl||'')+'" oninput="runSim()" style="background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);color:#fff;box-shadow:none"></div></div>'
+    +'<div><div class="dfl">Monthly Pmt</div><div class="iw"><span class="ipx" style="color:#ed2427">$</span><input type="number" class="px" id="dp'+id+'" placeholder="350" value="'+(pm||'')+'" oninput="runSim()" style="background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);color:#fff;box-shadow:none"></div></div></div>';
+  document.getElementById('debt-list').appendChild(el);runSim();
+}
+function rmDebt(id){var el=document.getElementById('de'+id);if(el)el.remove();runSim();}
+function getDebts(){var out=[];document.querySelectorAll('.debt-entry').forEach(function(el){var id=el.id.replace('de','');var n=(document.getElementById('dn'+id)||{}).value||'Account';var b=parseFloat((document.getElementById('db'+id)||{}).value)||0;var p=parseFloat((document.getElementById('dp'+id)||{}).value)||0;if(b>0&&p>0)out.push({name:n,bal:b,pmt:p});});return out;}
+function runSim(){
+  var debts=getDebts(),funds=parseFloat(document.getElementById('pfunds').value)||0;
+  var res=document.getElementById('sim-res');if(!debts.length||!funds){res.classList.remove('on');return;}
+  var sorted=debts.slice().sort(function(a,b){return b.pmt!==a.pmt?b.pmt-a.pmt:a.bal-b.bal;});
+  var rem=funds,removed=0,paid=[];
+  sorted.forEach(function(d){if(rem>=d.bal){rem-=d.bal;removed+=d.pmt;paid.push(d);}});
+  var newDebtPmt=debts.reduce(function(a,d){return a+d.pmt;},0)-removed;
+  var newDTI=S.income>0?((S.housingPmt+newDebtPmt)/S.income)*100:100;
+  var rank=1,html='';
+  sorted.forEach(function(d){var py=paid.indexOf(d)>=0;html+='<div class="pi '+(py?'pi-y':'pi-n')+'"><div class="pin '+(py?'pin-y':'pin-n')+'">'+(py?rank++:'—')+'</div><div class="pib"><div class="pin2">'+d.name+'</div><div class="pid">Bal: $'+Math.round(d.bal).toLocaleString()+' · Pmt: $'+Math.round(d.pmt).toLocaleString()+'/mo</div></div><div class="pitag '+(py?'pty':'ptn')+'">'+(py?'✓ Pay Off':'Not enough')+'</div></div>';});
+  document.getElementById('plist').innerHTML=html;
+  document.getElementById('new-dti').textContent=newDTI.toFixed(1)+'%';
+  document.getElementById('pmt-saved').textContent='$'+Math.round(removed).toLocaleString()+'/mo';
+  document.getElementById('funds-left').textContent='$'+Math.round(rem).toLocaleString();
+  var msg=paid.length===0?'⚠️ Funds not enough to fully pay off any single account. Increase your budget or target the lowest-balance account first.':newDTI<=43?'✅ Paying off '+paid.length+' account'+(paid.length>1?'s':'')+' brings your DTI to '+newDTI.toFixed(1)+'% — you qualify for most programs!':newDTI<=50?'📈 New DTI of '+newDTI.toFixed(1)+'% may qualify for FHA or VA. Add more payoff funds to get below 43%.':'📊 DTI drops to '+newDTI.toFixed(1)+'%. Keep going — target under 43% for most programs.';
+  document.getElementById('simmsg').textContent=msg;res.classList.add('on');
+}
+
+// Address search
+// ── MAPBOX GEOCODER ──
+var geocoder = null;
+
+function initMapboxGeocoder() {
+  if (typeof MapboxGeocoder === 'undefined') {
+    setTimeout(initMapboxGeocoder, 200);
+    return;
+  }
+  mapboxgl.accessToken = 'pk.eyJ1IjoiaG9tZXRyeWFwcCIsImEiOiJjbXEyaDd0cHMwcDF1MnJwemlnMDE0bjMyIn0.Hjvir7yJLnh6vUpNRfKN_A';
+  geocoder = new MapboxGeocoder({
+    accessToken: 'pk.eyJ1IjoiaG9tZXRyeWFwcCIsImEiOiJjbXEyaDd0cHMwcDF1MnJwemlnMDE0bjMyIn0.Hjvir7yJLnh6vUpNRfKN_A',
+    types: 'address',
+    countries: 'us',
+    placeholder: 'Start typing any U.S. address…',
+    marker: false,
+    flyTo: false
+  });
+
+  geocoder.on('result', function(e) {
+    var feature = e.result;
+    var placeName = feature.place_name || '';
+    var coords = feature.geometry && feature.geometry.coordinates;
+    var lon = coords ? coords[0] : null;
+    var lat = coords ? coords[1] : null;
+    var zip = '';
+    var context = feature.context || [];
+    context.forEach(function(c) {
+      if (c.id && c.id.indexOf('postcode') === 0) zip = c.text;
+    });
+    document.getElementById('addrIn').value = placeName;
+    lookupProp(placeName, zip, lat, lon);
+  });
+
+  var container = document.getElementById('geocoder-container');
+  if (container) {
+    geocoder.addTo('#geocoder-container');
+  }
+}
+
+// Mapbox geocoder init — called from go() in main script
+
+function addrSearch() {}
+function renderAddr() {}
+function showManualOption() {}
+function useManualAddr(val) { lookupProp(val, 'default', null, null); }
+
+
+function initGooglePlaces(){}
+function searchAddress(){}
+function renderSuggestions(){}
+function useManualAddr(val){
+  lookupProp(val,'default',null,null);
+}
+
+function manualSearch(){
+  var val=document.getElementById('addrIn').value.trim();
+  if(!val){ return; }
+  document.getElementById('addr-dd').style.display='none';
+  lookupProp(val,'default',null,null);
+}
+
+
+function lookupProp(addr, zip, lat, lon) {
+  var mLoad = document.getElementById('m-load');
+  var pcard = document.getElementById('pcard');
+  var lcards = document.getElementById('lcards');
+  var impr = document.getElementById('impr');
+  var locard = document.getElementById('locard');
+  var ps = document.getElementById('prop-score');
+  var po = document.getElementById('price-override');
+
+  if(mLoad) mLoad.style.display = 'block';
+  if(pcard) pcard.style.display = 'none';
+  if(lcards) lcards.style.display = 'none';
+  if(impr) impr.style.display = 'none';
+  if(locard) locard.style.display = 'none';
+  if(ps) ps.style.display = 'none';
+  if(po) po.style.display = 'none';
+
+  // Call our Cloudflare Worker proxy (handles CORS + RentCast auth)
+  var workerUrl = 'https://hometry-api.pierce2988.workers.dev?address=' + encodeURIComponent(addr) + (zip ? '&zip=' + encodeURIComponent(zip) : '');
+
+  var done = false;
+  var timer = setTimeout(function() {
+    if(!done) {
+      done = true;
+      showPropertyResults(addr, estVal(lat,lon), null, null, null, zip, lat, lon, true);
+    }
+  }, 8000);
+
+  fetch(workerUrl)
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if(done) return;
+    done = true;
+    clearTimeout(timer);
+    if(data.error) {
+      showPropertyResults(addr, estVal(lat,lon), null, null, null, zip, lat, lon, true);
+      return;
+    }
+    var val = data.price || data.value || data.estimatedValue || null;
+    showPropertyResults(addr, val, data.bedrooms||null, data.bathrooms||null, data.squareFootage||null, zip, lat, lon, !val);
+  })
+  .catch(function() {
+    if(done) return;
+    done = true;
+    clearTimeout(timer);
+    showPropertyResults(addr, estVal(lat,lon), null, null, null, zip, lat, lon, true);
+  });
+}
+
+function showPropertyResults(addr, val, beds, baths, sqft, zip, lat, lon, isEstimate) {
+  var mLoad = document.getElementById('m-load');
+  var pcard = document.getElementById('pcard');
+  var po = document.getElementById('price-override');
+
+  if(mLoad) mLoad.style.display = 'none';
+
+  var finalVal = val || estVal(lat, lon);
+
+  var paddrEl = document.getElementById('p-addr');
+  var pvalEl = document.getElementById('p-val');
+  var pnoteEl = document.getElementById('p-note');
+  if(paddrEl) paddrEl.textContent = addr;
+  if(pvalEl) pvalEl.textContent = fmt(finalVal);
+
+  var details = [];
+  if(beds) details.push(beds + ' bed');
+  if(baths) details.push(baths + ' bath');
+  if(sqft) details.push(Math.round(sqft).toLocaleString() + ' sqft');
+  var source = isEstimate ? 'Estimated value · Enter actual listing price below to override' : 'Valuation by RentCast · Enter actual listing price to override';
+  if(pnoteEl) pnoteEl.textContent = (details.length ? details.join(' · ') + ' · ' : '') + source;
+
+  if(pcard) pcard.style.display = 'block';
+  if(po) po.style.display = 'block';
+  var mp = document.getElementById('manual-price');
+  if(mp) mp.placeholder = 'e.g. ' + Math.round(finalVal).toLocaleString('en-US');
+
+  console.log('[H°METRY] showPropertyResults called. val='+finalVal+' zip='+zip+' isEstimate='+isEstimate);
+  console.log('[H°METRY] S.rate='+S.rate+' S.income='+S.income+' S.creditRange='+S.creditRange);
+
+  try {
+    calcPropertyScore(finalVal, addr);
+    console.log('[H°METRY] calcPropertyScore OK');
+  } catch(e) { console.error('[H°METRY] calcPropertyScore error:', e.message); }
+
+  try {
+    buildMatches(finalVal, zip || 'default');
+    console.log('[H°METRY] buildMatches OK');
+    var lc = document.getElementById('lcards');
+    console.log('[H°METRY] lcards display after buildMatches:', lc ? lc.style.display : 'NOT FOUND');
+  } catch(e) {
+    console.error('[H°METRY] buildMatches error:', e.message, e.stack);
+    var lc = document.getElementById('lcards');
+    if(lc) { lc.innerHTML = '<div style="padding:20px;text-align:center;color:#888">Error loading loan programs: '+e.message+'</div>'; lc.style.display='flex'; }
+  }
+}
+
+
+function showProp(addr,val,zip){
+  document.getElementById('m-load').style.display='none';
+  var pc=document.getElementById('pcard');
+  if(pc){pc.style.display='block';}
+  document.getElementById('p-addr').textContent=addr;
+  document.getElementById('p-val').textContent=fmt(val);
+  var po=document.getElementById('price-override');
+  if(po) po.style.display='block';
+  var mp=document.getElementById('manual-price');
+  if(mp) mp.placeholder='e.g. '+Math.round(val).toLocaleString('en-US');
+  calcPropertyScore(val,addr);
+  buildMatches(val,zip);
+}
+
+// Expandable loan cards
+function toggleCard(el){
+  var card=el.closest('.lcard2');
+  if(card.classList.contains('expanded')){card.classList.remove('expanded');}
+  else{document.querySelectorAll('.lcard2.expanded').forEach(function(c){c.classList.remove('expanded');});card.classList.add('expanded');}
+}
+
+function buildMatches(pv,zip){
+  var cn={'760+':780,'740-759':749,'720-739':729,'700-719':709,'680-699':689,'660-679':669,'640-659':649,'620-639':629,'580-619':599,'below-580':560}[S.creditRange]||S.creditScore||600;
+  var dti=S.dti||45,rate=S.rate||7.0,loans=[];
+  var cm=cn<620||dti>50?'no':cn<680||dti>43?'maybe':'yes';
+
+  // Conventional 5%
+  var c5l=pv*.95,c5pay=pmt(c5l,rate,360),c5down=pv*.05;
+  loans.push({n:'Conventional',sub:'5% Down',ico:'🏦',m:cm,pay:c5pay,loan:c5l,down:c5down,dpct:'5%',rate:rate,term:30,note:'PMI required',total30:c5pay*360});
+  // Conventional 20% if assets sufficient
+  if(S.assets>=pv*.2+pv*.025){
+    var c20l=pv*.80,c20pay=pmt(c20l,rate,360),c20down=pv*.20;
+    loans.push({n:'Conventional',sub:'20% Down — No PMI',ico:'🏦',m:cm,pay:c20pay,loan:c20l,down:c20down,dpct:'20%',rate:rate,term:30,note:'No PMI',total30:c20pay*360});
+  }
+  // FHA 3.5%
+  var fl=pv*.965,fpay=pmt(fl,rate,360)+(fl*.0055/12),fdown=pv*.035,fm=cn<580||dti>56.9?'no':cn<620?'maybe':'yes';
+  loans.push({n:'FHA',sub:'3.5% Down',ico:'🏛️',m:fm,pay:fpay,loan:fl,down:fdown,dpct:'3.5%',rate:rate,term:30,note:'Includes MIP',total30:fpay*360});
+  // VA
+  if(S.isVA){var vl=pv*1.0215,vpay=pmt(vl,rate,360),vm=cn<620?'maybe':'yes';loans.push({n:'VA Loan',sub:'0% Down',ico:'🇺🇸',m:vm,pay:vpay,loan:vl,down:0,dpct:'0%',rate:rate,term:30,note:'No PMI · No max DTI',total30:vpay*360});}
+
+  var bm={yes:'mby',maybe:'mbm',no:'mbn'},bl={yes:'✓ Strong Match',maybe:'⚡ Possible',no:'✗ Not Matched'},cl={yes:'ly',maybe:'lm',no:'ln'};
+
+  document.getElementById('lcards').innerHTML=loans.map(function(l){
+    var matchedBody='';
+    if(l.m!=='no'){
+      matchedBody='<div class="lpy">'+fmtM(l.pay)+'/mo</div><div class="lps">Est. P&I · '+l.note+'</div>';
+      var expandBody='<div class="lcard-body">'
+        +'<div class="ldets">'
+        +'<div class="ldet"><div class="ldl">Loan Amount</div><div class="ldv">'+fmt(l.loan)+'</div></div>'
+        +'<div class="ldet"><div class="ldl">Down Payment</div><div class="ldv">'+fmt(l.down)+' ('+l.dpct+')</div></div>'
+        +'<div class="ldet"><div class="ldl">Interest Rate</div><div class="ldv">'+l.rate+'%</div></div>'
+        +'<div class="ldet"><div class="ldl">Loan Term</div><div class="ldv">'+l.term+' Years</div></div>'
+        +'<div class="ldet"><div class="ldl">Monthly P&I</div><div class="ldv">'+fmtM(l.pay)+'</div></div>'
+        +'<div class="ldet"><div class="ldl">Est. Total Cost</div><div class="ldv">'+fmt(l.total30)+'</div></div>'
+        +'</div>'
+        +'<button class="lcard-cta">Get Pre-Qualified for This Program →</button>'
+        +'</div>';
+      return '<div class="lcard2 '+cl[l.m]+'">'
+        +'<div class="lcard-header" onclick="toggleCard(this)">'
+        +'<div class="lcard-header-left">'
+        +'<div class="lt2"><div class="lna">'+l.ico+' '+l.n+' — '+l.sub+'</div><div class="mb '+bm[l.m]+'">'+bl[l.m]+'</div></div>'
+        +matchedBody
+        +'</div>'
+        +'<div class="lcard-expand-icon">⌄</div>'
+        +'</div>'
+        +expandBody
+        +'</div>';
+    } else {
+      return '<div class="lcard2 '+cl[l.m]+'">'
+        +'<div class="lcard-header" style="cursor:default">'
+        +'<div class="lcard-header-left"><div class="lt2"><div class="lna">'+l.ico+' '+l.n+' — '+l.sub+'</div><div class="mb '+bm[l.m]+'">'+bl[l.m]+'</div></div>'
+        +'<div class="no-match-msg">Does not meet minimum guidelines at this time.</div></div>'
+        +'</div></div>';
+    }
+  }).join('');
+
+  var lc2=document.getElementById('lcards');if(lc2){lc2.style.display='flex';}
+  var th2=document.getElementById('tap-hint');if(th2)th2.style.display='block';
+
+  var ii=[];if(cn<620)ii.push('Raise credit score to at least 620 to unlock FHA and Conventional');if(cn<680)ii.push('A score of 680+ gets significantly better conventional rates');if(dti>50)ii.push('Reduce monthly debts to bring back-end DTI below 50%');if(S.assets<pv*.2+pv*.025)ii.push('Saving to 20% down eliminates PMI and lowers your monthly cost');
+  if(ii.length){document.getElementById('impr-i').innerHTML=ii.map(function(x){return'<div class="impr-i">'+x+'</div>';}).join('');var imp=document.getElementById('impr');if(imp)imp.style.display='block';}
+
+  var lo=LO[zip]||LO['default'];
+  document.getElementById('lo-nm').textContent=lo.name;document.getElementById('lo-tl').textContent=lo.title;document.getElementById('lo-nmls').textContent=lo.nmls;
+  document.getElementById('lo-apply').onclick=function(){window.open(lo.url,'_blank');};
+  document.getElementById('lo-call').onclick=function(){window.location.href='tel:'+lo.phone;};
+  var loc=document.getElementById('locard');if(loc)loc.style.display='block';
+}
+
+// ── EDIT PANEL ──
+function openEdit(){
+  // Pre-fill from current state
+  var fi=document.getElementById('e-fico');
+  if(fi) fi.value=S.creditScore||'';
+  document.getElementById('e-income').value=S.income||'';
+  document.getElementById('e-debts').value=S.debts||'';
+  document.getElementById('e-price').value=S.homePrice||'';
+  document.getElementById('e-rate').value=S.rate||'';
+  document.getElementById('e-assets').value=S.assets||'';
+  document.getElementById('e-down').value=S.down||'';
+  document.getElementById('e-va').value=S.isVA?'yes':'no';
+  // Show current score
+  document.getElementById('els-score').textContent=S.score;
+  var ti=tierInfo(S.score);
+  document.getElementById('els-tier').textContent=ti.label;
+  document.getElementById('els-delta').textContent='—';
+  document.getElementById('els-delta').className='els-delta same';
+  document.getElementById('els-delta-lbl').textContent='from current';
+  document.getElementById('edit-panel').classList.add('on');
+  document.body.style.overflow='hidden';
+}
+
+function closeEdit(){
+  document.getElementById('edit-panel').classList.remove('on');
+  document.body.style.overflow='';
+}
+
+function closeEditIfBg(e){
+  if(e.target===document.getElementById('edit-panel')) closeEdit();
+}
+
+function editRecalc(){
+  // Read edit panel values
+  var fico=parseInt(document.getElementById('e-fico').value)||0;
+  var cr=fico>=300&&fico<=850?ficoRange(fico):S.creditRange;
+  var income=parseFloat(document.getElementById('e-income').value)||S.income;
+  var debts=parseFloat(document.getElementById('e-debts').value)||0;
+  var price=parseFloat(document.getElementById('e-price').value)||S.homePrice;
+  var rate=parseFloat(document.getElementById('e-rate').value)||S.rate;
+  var assets=parseFloat(document.getElementById('e-assets').value)||0;
+  var down=parseFloat(document.getElementById('e-down').value)||0;
+  var isVA=document.getElementById('e-va').value==='yes';
+
+  // Recalculate score with edited values
+  var mp=pmt(price-down,rate,360),tax=price*.014/12,ins=price*.005/12;
+  var hpmt=mp+tax+ins,total=hpmt+debts;
+  var dti=income>0?(total/income)*100:100;
+  var fe=income>0?(hpmt/income)*100:100;
+
+  // Temporarily override isVA for dtiSS
+  var origVA=S.isVA; S.isVA=isVA;
+  var c=creditSS(cr),d=dtiSS(dti),a2=assetSSCustom(price,down,rate,assets),f=feSS(fe);
+  S.isVA=origVA;
+
+  var newScore=Math.round(c*.35+d*.30+a2*.20+f*.15);
+  var delta=newScore-S.score;
+  var ti=tierInfo(newScore);
+
+  document.getElementById('els-score').textContent=newScore;
+  document.getElementById('els-tier').textContent=ti.label;
+  var deltaEl=document.getElementById('els-delta');
+  deltaEl.textContent=(delta>0?'+':'')+delta;
+  deltaEl.className='els-delta '+(delta>0?'up':delta<0?'down':'same');
+  document.getElementById('els-delta-lbl').textContent=delta===0?'no change':delta>0?'improvement':'decrease';
+}
+
+function assetSSCustom(price,down,rate,assets){
+  var cl=price*0.025,mp=pmt(price-down,rate,360),r6=mp*6,r3=mp*3,req=down+cl,a=assets;
+  if(a>=req+r6)return 100;if(a>=req+r3)return 90;if(a>=req+mp)return 80;
+  if(a>=req*.9)return 65;if(a>0)return 45;return 20;
+}
+
+function saveEdit(){
+  // Commit all edited values to state
+  var fico=parseInt(document.getElementById('e-fico').value)||0;
+  if(fico>=300&&fico<=850){S.creditScore=fico;S.creditRange=ficoRange(fico);}
+  S.income=parseFloat(document.getElementById('e-income').value)||S.income;
+  S.debts=parseFloat(document.getElementById('e-debts').value)||S.debts;
+  S.homePrice=parseFloat(document.getElementById('e-price').value)||S.homePrice;
+  S.rate=parseFloat(document.getElementById('e-rate').value)||S.rate;
+  S.assets=parseFloat(document.getElementById('e-assets').value)||S.assets;
+  S.down=parseFloat(document.getElementById('e-down').value)||S.down;
+  S.isVA=document.getElementById('e-va').value==='yes';
+  closeEdit();
+  // Recalculate and navigate to updated results
+  calcScore();
+}
+
+// ── REFINANCE CALCULATOR ──
+var refiTerm = 30;
+function selRefiTerm(el, t){
+  document.querySelectorAll('#p-refi .oc').forEach(function(b){b.classList.remove('sel');});
+  el.classList.add('sel'); refiTerm = t; chkRefi();
+}
+function chkRefi(){
+  var b=document.getElementById('rf-balance').value;
+  var cr=document.getElementById('rf-cur-rate').value;
+  var nr=document.getElementById('rf-new-rate').value;
+  document.getElementById('b-refi-calc').disabled=!b||!cr||!nr;
+}
+function calcRefi(){
+  var bal=parseFloat(document.getElementById('rf-balance').value)||0;
+  var curRate=parseFloat(document.getElementById('rf-cur-rate').value)||0;
+  var newRate=parseFloat(document.getElementById('rf-new-rate').value)||0;
+  var n=refiTerm*12;
+  var curPmt=pmt(bal,curRate,n);
+  var newPmt=pmt(bal,newRate,n);
+  var monthlySave=curPmt-newPmt;
+  var totalSave=monthlySave*n;
+  document.getElementById('rf-cur-pmt').textContent=fmtM(curPmt)+'/mo';
+  document.getElementById('rf-new-pmt').textContent=fmtM(newPmt)+'/mo';
+  if(monthlySave>0) msg='Refinancing at '+newRate+'% could save you '+fmtM(monthlySave)+'/mo. Total savings over '+refiTerm+' years: '+fmt(totalSave)+'.';
+  document.getElementById('rf-total-save').textContent=fmt(totalSave);
+  var msg='';
+  if(monthlySave>0) msg='Refinancing at '+newRate+'% saves you '+fmtM(monthlySave)+' per month. That is '+fmt(totalSave)+' total over '+refiTerm+' years.';
+  else msg='⚠️ At the rates entered, refinancing would increase your payment. Try a lower new rate or shorter term.';
+  document.getElementById('rf-msg').textContent=msg;
+  document.getElementById('refi-results').style.display='block';
+}
+
+</script>
+</body>
+</html>
