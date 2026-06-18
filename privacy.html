@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Privacy Policy — H°METRY</title>
+<meta name="description" content="H°METRY Privacy Policy — how we collect, use, share, and protect your information.">
+<meta name="theme-color" content="#1a1a2e">
+<meta name="robots" content="index,follow">
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%231a1a2e'/><text x='30' y='45' font-family='Arial,Helvetica,sans-serif' font-size='38' font-weight='bold' fill='%23ffffff' text-anchor='middle'>H<tspan fill='%23ed2427'>°</tspan></text></svg>">
+
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@700;800&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --red:#ed2427;
+    --navy:#1a1a2e;
+    --ink:#111;
+    --muted:#555;
+    --line:#e4e4e8;
+    --bg:#f5f5f7;
+    --card:#fff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:Barlow,system-ui,sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* Header */
+  .hdr{
+    background:var(--navy);
+    padding:calc(22px + env(safe-area-inset-top)) 24px 26px;
+    border-bottom:3px solid var(--red);
+  }
+  .hdr-inner{max-width:760px;margin:0 auto}
+  .wordmark{
+    font-family:'Arial Black',Arial,sans-serif;
+    font-weight:900;letter-spacing:-.5px;
+    font-size:1.35rem;color:#fff;text-decoration:none;
+    display:inline-block;
+  }
+  .wordmark .deg{color:var(--red)}
+  .hdr h1{
+    font-family:"Barlow Condensed",sans-serif;
+    font-weight:800;font-size:2.4rem;color:#fff;
+    line-height:1.05;margin-top:14px;
+  }
+  .hdr .eff{
+    margin-top:8px;font-size:.82rem;font-weight:600;
+    color:rgba(255,255,255,.62);letter-spacing:.02em;
+  }
+
+  /* Layout */
+  .wrap{max-width:760px;margin:0 auto;padding:28px 24px 80px}
+
+  .lede{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-left:4px solid var(--red);
+    border-radius:14px;
+    padding:18px 20px;
+    margin-bottom:30px;
+    font-size:.96rem;color:var(--muted);
+  }
+
+  /* TOC */
+  .toc{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:18px 20px;
+    margin-bottom:34px;
+  }
+  .toc h2{
+    font-size:.72rem;font-weight:700;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--red);margin-bottom:12px;
+  }
+  .toc ol{list-style:none;counter-reset:t;columns:2;column-gap:28px}
+  .toc li{counter-increment:t;margin-bottom:7px;break-inside:avoid}
+  .toc a{
+    color:var(--ink);text-decoration:none;font-size:.9rem;font-weight:500;
+    display:flex;gap:9px;align-items:baseline;
+  }
+  .toc a:hover{color:var(--red)}
+  .toc a::before{
+    content:counter(t,decimal-leading-zero);
+    color:var(--red);font-weight:800;font-size:.72rem;
+    font-variant-numeric:tabular-nums;flex-shrink:0;
+  }
+  @media(max-width:520px){.toc ol{columns:1}}
+
+  /* Sections */
+  section{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:24px 24px 26px;
+    margin-bottom:18px;
+    scroll-margin-top:18px;
+  }
+  .eyebrow{
+    font-size:.7rem;font-weight:700;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--red);
+    display:flex;align-items:center;gap:8px;margin-bottom:6px;
+  }
+  .eyebrow .n{
+    font-variant-numeric:tabular-nums;
+  }
+  section h2{
+    font-family:"Barlow Condensed",sans-serif;
+    font-weight:800;font-size:1.6rem;color:var(--ink);
+    line-height:1.12;margin-bottom:12px;
+  }
+  section h3{
+    font-size:1rem;font-weight:700;color:var(--ink);
+    margin:18px 0 7px;
+  }
+  section p{color:var(--muted);font-size:.95rem;margin-bottom:12px}
+  section p:last-child{margin-bottom:0}
+  section ul{margin:0 0 12px;padding-left:0;list-style:none}
+  section ul li{
+    color:var(--muted);font-size:.95rem;
+    padding-left:20px;position:relative;margin-bottom:8px;
+  }
+  section ul li::before{
+    content:"";position:absolute;left:2px;top:.62em;
+    width:6px;height:6px;border-radius:50%;background:var(--red);
+  }
+  section a{color:var(--red);font-weight:600;text-decoration:none}
+  section a:hover{text-decoration:underline}
+  strong{color:var(--ink);font-weight:700}
+
+  .callout{
+    background:#fff5f5;
+    border:1px solid rgba(237,36,39,.2);
+    border-radius:12px;padding:14px 16px;margin:14px 0;
+    font-size:.9rem;color:#5a3a3a;
+  }
+
+  /* Footer */
+  footer{
+    max-width:760px;margin:0 auto;padding:0 24px 60px;
+    text-align:center;color:#999;font-size:.82rem;
+  }
+  footer .wordmark{color:var(--navy);font-size:1.05rem;margin-bottom:8px}
+  footer a{color:var(--red);text-decoration:none;font-weight:600}
+
+  a:focus-visible,.toc a:focus-visible{outline:2px solid var(--red);outline-offset:3px;border-radius:3px}
+  @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-inner">
+    <a class="wordmark" href="https://hometry.app/">H<span class="deg">°</span>METRY</a>
+    <h1>Privacy Policy</h1>
+    <div class="eff">Last updated: June 17, 2026</div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <p class="lede">
+    This Privacy Policy explains how <strong>H°METRY</strong> ("H°METRY," "we," "us," or "our")
+    collects, uses, shares, and protects information when you use our website, mobile app, and
+    related services (together, the "Service"). H°METRY is a free, educational tool that helps you
+    understand your mortgage readiness and, if you choose, connects you with a licensed loan officer.
+    By using the Service, you agree to the practices described here.
+  </p>
+
+  <nav class="toc" aria-label="Table of contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#info">Information We Collect</a></li>
+      <li><a href="#use">How We Use Information</a></li>
+      <li><a href="#share">How We Share Information</a></li>
+      <li><a href="#officers">Loan Officer Matching</a></li>
+      <li><a href="#providers">Service Providers</a></li>
+      <li><a href="#retention">Data Retention</a></li>
+      <li><a href="#security">Security</a></li>
+      <li><a href="#rights">Your Rights & Choices</a></li>
+      <li><a href="#children">Children's Privacy</a></li>
+      <li><a href="#state">State Privacy Rights</a></li>
+      <li><a href="#changes">Changes to This Policy</a></li>
+      <li><a href="#contact">Contact Us</a></li>
+    </ol>
+  </nav>
+
+  <section id="info">
+    <div class="eyebrow"><span class="n">01</span> What we collect</div>
+    <h2>Information We Collect</h2>
+    <p>We collect information you provide directly, information created as you use the Service, and a limited amount of technical information collected automatically.</p>
+
+    <h3>Information you provide</h3>
+    <ul>
+      <li><strong>Account information</strong> — your name and email address when you create an account or sign in (including via Google sign-in).</li>
+      <li><strong>Financial readiness profile</strong> — information you enter to calculate your readiness score, such as your credit score or credit range, employment type, income, monthly debts, assets, down payment, and target home price.</li>
+      <li><strong>Eligibility details</strong> — answers about first-time homebuyer status, military or veteran service and VA eligibility, and credit history events such as bankruptcy or foreclosure history where you choose to provide them.</li>
+      <li><strong>Property searches</strong> — addresses and ZIP codes you look up to estimate price, value, and taxes.</li>
+    </ul>
+
+    <h3>Information collected automatically</h3>
+    <ul>
+      <li><strong>Device and usage data</strong> — basic technical information such as device type, browser, and how you interact with the Service, used to keep it working and improve it.</li>
+      <li><strong>Local storage</strong> — we store information on your device to keep you signed in and remember your progress. We do not use third-party advertising cookies.</li>
+    </ul>
+
+    <div class="callout">
+      <strong>Sensitive financial information.</strong> Some of what you share — like credit, income, and credit-history details — is sensitive personal financial information. We only collect what is needed to estimate your readiness and, if you ask, to connect you with a loan officer. You can use the readiness tools without providing every field.
+    </div>
+  </section>
+
+  <section id="use">
+    <div class="eyebrow"><span class="n">02</span> How we use it</div>
+    <h2>How We Use Information</h2>
+    <p>We use the information we collect to:</p>
+    <ul>
+      <li>Calculate your Mortgage Readiness Score and show educational loan-program estimates (Conventional, FHA, and VA).</li>
+      <li>Provide property price, value, and tax estimates for addresses you search.</li>
+      <li>Create and secure your account and keep you signed in across sessions.</li>
+      <li>Connect you with a licensed loan officer when you choose to be matched (see Section 04).</li>
+      <li>Operate, maintain, troubleshoot, and improve the Service.</li>
+      <li>Communicate with you about the Service and respond to your requests.</li>
+      <li>Comply with legal obligations and protect against fraud, abuse, and security risks.</li>
+    </ul>
+    <p>H°METRY provides educational estimates only. It is not a lender, is not a loan application, and the estimates are not a commitment to lend or an offer of credit.</p>
+  </section>
+
+  <section id="share">
+    <div class="eyebrow"><span class="n">03</span> How we share it</div>
+    <h2>How We Share Information</h2>
+    <p>We do not sell your personal information for money. We share information only in the ways described below:</p>
+    <ul>
+      <li><strong>With loan officers you're matched to</strong> — see Section 04.</li>
+      <li><strong>With service providers</strong> who host and operate the Service on our behalf — see Section 05.</li>
+      <li><strong>For legal reasons</strong> — to comply with the law, respond to lawful requests, enforce our terms, or protect the rights, safety, and property of you, us, or others.</li>
+      <li><strong>In a business transfer</strong> — if H°METRY is involved in a merger, acquisition, or sale of assets, information may be transferred as part of that transaction, subject to this Policy.</li>
+    </ul>
+  </section>
+
+  <section id="officers">
+    <div class="eyebrow"><span class="n">04</span> Matching</div>
+    <h2>Loan Officer Matching</h2>
+    <p>A core part of the Service is helping you connect with a licensed loan officer who serves your area. When you choose to be matched or request to be contacted:</p>
+    <ul>
+      <li>We share relevant parts of your readiness profile — such as your name, contact information, target area, and the financial details needed to discuss loan options — with the matched loan officer.</li>
+      <li>That loan officer may contact you to discuss mortgage options and may use your information under their own privacy practices.</li>
+    </ul>
+    <p>If you do not want your information shared with a loan officer, do not request to be matched or contacted. You can also reach us to ask that a match be removed going forward (we cannot recall information a loan officer has already received).</p>
+  </section>
+
+  <section id="providers">
+    <div class="eyebrow"><span class="n">05</span> Providers</div>
+    <h2>Service Providers</h2>
+    <p>We rely on trusted third parties to run the Service. They may process your information only to provide services to us:</p>
+    <ul>
+      <li><strong>Google Firebase</strong> — authentication, database, and hosting infrastructure.</li>
+      <li><strong>RentCast</strong> — property price, value, and tax estimates for addresses you search.</li>
+      <li><strong>Mapbox</strong> — maps and location/ZIP lookups.</li>
+    </ul>
+    <p>Each provider maintains its own privacy and security practices. We encourage you to review their policies for details on how they handle data.</p>
+  </section>
+
+  <section id="retention">
+    <div class="eyebrow"><span class="n">06</span> Retention</div>
+    <h2>Data Retention</h2>
+    <p>We keep your information for as long as your account is active or as needed to provide the Service, comply with our legal obligations, resolve disputes, and enforce our agreements. When information is no longer needed, we take reasonable steps to delete or de-identify it. You can request deletion of your account and associated data at any time (see Section 08).</p>
+  </section>
+
+  <section id="security">
+    <div class="eyebrow"><span class="n">07</span> Security</div>
+    <h2>Security</h2>
+    <p>We use reasonable administrative, technical, and organizational measures designed to protect your information, including encrypted connections and access controls on our database. No method of transmission or storage is completely secure, so we cannot guarantee absolute security. Please use a strong, unique password and keep your sign-in credentials confidential.</p>
+  </section>
+
+  <section id="rights">
+    <div class="eyebrow"><span class="n">08</span> Your choices</div>
+    <h2>Your Rights & Choices</h2>
+    <p>Depending on where you live, you may have the right to:</p>
+    <ul>
+      <li><strong>Access</strong> the personal information we hold about you.</li>
+      <li><strong>Correct</strong> inaccurate information — you can also update most profile details directly in the app.</li>
+      <li><strong>Delete</strong> your account and associated personal information.</li>
+      <li><strong>Opt out</strong> of being matched with or contacted by a loan officer.</li>
+    </ul>
+    <p>To make a request, contact us using the details in Section 12. We will respond consistent with applicable law and may need to verify your identity first. We will not discriminate against you for exercising these rights.</p>
+  </section>
+
+  <section id="children">
+    <div class="eyebrow"><span class="n">09</span> Children</div>
+    <h2>Children's Privacy</h2>
+    <p>The Service is intended for adults and is not directed to children under 18. We do not knowingly collect personal information from children. If you believe a child has provided us information, please contact us and we will take steps to delete it.</p>
+  </section>
+
+  <section id="state">
+    <div class="eyebrow"><span class="n">10</span> State rights</div>
+    <h2>State Privacy Rights</h2>
+    <p>If you are a resident of California or another U.S. state with a comprehensive privacy law, you may have additional rights, including the rights to access, delete, and correct your personal information, and to opt out of certain sharing. We do not sell personal information for monetary value and do not engage in targeted advertising based on your information. To exercise your rights, contact us using Section 12; you may use an authorized agent where permitted by law.</p>
+    <p>Because H°METRY helps connect consumers with mortgage loan officers, some information may be subject to financial privacy laws such as the Gramm-Leach-Bliley Act. Where those laws apply, we handle your information consistent with their requirements.</p>
+  </section>
+
+  <section id="changes">
+    <div class="eyebrow"><span class="n">11</span> Updates</div>
+    <h2>Changes to This Policy</h2>
+    <p>We may update this Privacy Policy from time to time. When we do, we will revise the "Last updated" date above and, where appropriate, provide additional notice. Your continued use of the Service after an update means you accept the revised Policy.</p>
+  </section>
+
+  <section id="contact">
+    <div class="eyebrow"><span class="n">12</span> Contact</div>
+    <h2>Contact Us</h2>
+    <p>If you have questions about this Privacy Policy or want to exercise your rights, contact us at:</p>
+    <ul>
+      <li><strong>Email:</strong> <a href="mailto:privacy@hometry.app">privacy@hometry.app</a></li>
+      <li><strong>Website:</strong> <a href="https://hometry.app/">hometry.app</a></li>
+    </ul>
+  </section>
+
+</div>
+
+<footer>
+  <div class="wordmark">H<span class="deg" style="color:var(--red)">°</span>METRY</div>
+  <div>&copy; 2026 H°METRY. All rights reserved. &middot; <a href="https://hometry.app/">Back to app</a></div>
+</footer>
+
+</body>
+</html>
